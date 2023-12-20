@@ -1,0 +1,130 @@
+---
+title: "EP05"
+author: "Grupo 4"
+date: "2023-10-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Librerías
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(ez)
+```
+
+Un equipo de investigadores del área de interacción humano-información está estudiando si el área temática y el nivel de dificultad del problema de información influyen en el tiempo (en segundos) que toma un usuario en formular una consulta de búsqueda para resolver dicho problema. Para ello, han reclutado a un grupo de participantes voluntarios, asignados aleatoriamente a distintos grupos. Cada participante debe resolver tres problemas de información con diferentes niveles de dificultad: baja, media y alta. A su vez, cada grupo debe resolver problemas relacionados a una temática diferente. Los datos recolectados contemplan las siguientes variables:
+
+Variable	  |      Descripción
+id	          |      identificador único de cada participante.
+Área	      |      Área temática de los problemas que el participante debe responder. Variable categórica con los niveles Arquitectura, Biología, Computación, Economía, Física, Leyes, Literatura, Matemáticas, Música, Pedagogía, Psicología, Química.
+Dificultad	  |      Nivel de dificultad del problema resuelto. Variable categórica con los niveles Baja, Media y Alta.
+Tiempo	      |      Tiempo, en segundos, que toma al participante formular la consulta.
+
+En este momento, los investigadores buscan determinar si existen diferencias en el tiempo que tardan los usuarios en formular una consulta para un problema de dificultad media en las áreas de leyes, música y matemáticas.
+
+Los datos se observan en formato ancho y largo como muestran las tablas siguentes.
+```{r}
+datos <- read.csv2("EP05 Datos.csv", sep = ",")
+
+muestra <- datos %>% filter(dificultad == "Media")
+muestra <- muestra %>% filter(area == "Leyes" |
+                                area == "Música" |
+                                area == "Matemáticas")
+muestra_ancha <- muestra %>% pivot_wider(names_from = "area",
+                                         values_from = "tiempo")
+#Datos ancho
+muestra_ancha
+#Datos Largos
+head(muestra)
+```
+
+Por motivos de requerimiento de las funciones en R, se utilizan los datos en formato largo.
+
+Las hipótesis a utilizar para responder a la pregunta son:
+
+$$H_0: \text{Los tiempos que tardan los usuarios en formular una consulta para un problema de dificultad media en} $$
+$$\text{las áreas de leyes, música y matemáticas son iguales}$$
+$$H_a: \text{Los tiempos que tardan los usuarios en formular una consulta para un problema de dificultad media en} $$
+$$\text{las áreas de leyes, música y matemáticas son distintas}$$
+
+En forma matemática:
+
+$$H_0: \mu_{leyes} = \mu_{música} = \mu_{matemáticas} $$
+$$H_a: \mu_{leyes} \neq \mu_{música} \neq \mu_{matemáticas} $$
+
+### Condiciones para utilizar ANOVA para muestras independientes
+1.- La escala con la que se miden los datos es el tiempo, una escala de intervalos iguales.
+2.- Los usuarios de la muestra fueron asignados de forma aleatoria según el contexto del enunciado
+3.- Revisión de normalidad:
+
+```{r}
+leyes <- muestra %>% filter(area == "Leyes")
+musica <- muestra %>% filter(area == "Música")
+mates <- muestra %>% filter(area == "Matemáticas")
+
+muestra2 <-  rbind(leyes, musica, mates)
+
+muestra2[["area"]] <- factor(muestra2[["area"]])
+
+g <- ggqqplot(muestra2,
+              x = "tiempo",
+              y = "area",
+              color = "area")
+
+g <- g + facet_wrap(~ area)
+g <- g + rremove("x.ticks") + rremove("x.text")
+g <- g + rremove("y.ticks") + rremove("y.text")
+g <- g + rremove("axis.title")
+g
+
+```
+
+Se puede revisar este resultado igualmente con el uso de shapiro
+
+```{r}
+# Normalidad Leyes
+testle <- shapiro.test(leyes$tiempo)
+testle
+# Normalidad Música
+testmu <- shapiro.test(musica$tiempo)
+testmu
+# Normalidad Matemáticas
+testma <- shapiro.test(mates$tiempo)
+testma
+```
+
+4.- La revisión de la homogeneidad se revisará con la prueba de Levene que utiliza la función ezANOVA().
+
+```{r}
+muestra[["area"]] <- factor(muestra[["area"]])
+muestra[["id"]] <- factor(muestra[["id"]])
+
+prueba <- ezANOVA(muestra,
+                  dv = tiempo,
+                  wid = id,
+                  between = area,
+                  return_aov = TRUE)
+prueba$`Levene's Test for Homogeneity of Variance`
+
+summary(prueba$aov)
+
+```
+
+Como el p-value de ANOVA resulta en 1.76e-12, se realiza una prueba Post hoc por falla de la hipótesis nula en ANOVA, y por medio de eso identificar en cuáles grupos hay diferencias con los tiempos.
+
+```{r}
+post_hoc <- TukeyHSD(prueba$aov,
+                     "area",
+                     ordered = TRUE,
+                     conf.level = 0.95)
+post_hoc
+```
+
+Los tiempos que tardan los usuarios en formular una consulta para un problema de dificultad media en las áreas de leyes, música y matemáticas son distintas en todas las áreas.
+Esto se puede determinar mirando los p-value ajustado por el método de TukeyHSD. Entre Matemáticas-Música salió un p-value de 0.0000507, entre Leyes-Música con un p-value 0.0000000 y entre Leyes-Matemáticas con un p-value de 0.0046970. Finalmente, se puede sostener si existen diferencias en el tiempo que tardan los usuarios en formular una consulta para un problema de dificultad media en las áreas de leyes, música y matemáticas

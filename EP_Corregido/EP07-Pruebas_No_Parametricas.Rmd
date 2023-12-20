@@ -1,0 +1,464 @@
+---
+title: "EP07"
+author: "Equipo 1"
+date: "2023-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Equipo 1:
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggpubr)
+```
+
+En el trabajo de título de una estudiante del DIINF se reportan tiempos de ejecución (en milisegundos) y la cercanía con la solución óptima (en por ciento) de la mejor solución encontrada con tres versiones de un algoritmo genético para resolver instancias del problema del vendedor viajero disponibles en repositorios públicos. Ahora debe enfrentar el análisis de estos datos, por que está solicitando ayuda de las y los estudiantes de Estadística Inferencial.
+
+```{r}
+datos <- read.csv2("EP07 Datos.csv", sep = ",")
+head(datos)
+```
+
+## Pregunta 1
+
+Observando los datos, la memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones A y B del algoritmo cuando las instancias tienen 70 o más nodos. ¿Los datos respaldan la intuición de la memorista?
+Para responder, filtren los datos para tener las instancias con 70 o más nodos y seleccionen las columnas de los tiempos de ejecución de las versiones A y B (en formato ancho). Usando como semilla el valor 73, obtengan muestras aleatorias independientes de 24 tiempos registrados por la versión A y 20 tiempos registrados por la versión B del algoritmo. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+
+#### 1. Primero, se filtran los datos
+
+```{r}
+filtro1 <- datos %>% filter(n.nodos > 69)
+filtro1$tiempo.C  <- NULL
+filtro1$mejor.C <- NULL
+
+set.seed(73)
+muestra <- filtro1[sample(nrow(filtro1), 44), ]
+head(muestra)
+
+muestraA <- muestra[1:24, ]
+muestraB <- muestra[25:44, ]
+```
+
+#### 2. Condiciones paramétricas:
+
+Se intenta realizar una prueba T de Student, por lo que se verificarán las siguientes condiciones:
+
+ - Las observaciones de ambas muestras son independientes
+
+*La manera en que se tomaron las muestras del conjunto de datos permite asegurar la independencia entre cada uno de los grupos estudiados, pues se seleccionaron una muestra aleatoria total de 44 datos, y se separaron en una muestra de 24 y otra de 20*
+
+ - La escala de medición empleada debe ser a lo menos ordinal, de modo que tenga sentido hablar de relaciones de orden (“igual que”, “menor que”, “mayor o igual que”)
+
+*En este caso se está trabajando con el tiempo que tardaron cada uno de los algoritmos en resolver un mismo problema, por lo tanto, la escala es más que solo ordinal.*
+
+ - Las observaciones provienen de una distribución cercana a la normal
+
+*Para revisar la normalidad de los datos a estudiar, se realiza un gráfico Q-Q para conocer la normalidad de la población de origen de las muestras.*
+
+```{r}
+#Grafico Q-Q
+g1 <- ggqqplot(muestraA, x = "tiempo.A", color = "red")
+
+g2 <- ggqqplot(muestraB, x = "tiempo.B",
+               color = "blue")
+
+g <- ggarrange(g1, g2, ncol = 2, nrow = 1, common.legend = TRUE)
+print(g)
+```
+
+Al realizar el gráfico Q-Q, se observan que los datos visualmente se encuentran dispersos, pero para asegurarse que la población del ejemplo no sigue una distribución normal, se realizará la prueba de normalidad de Shapiro.
+
+```{r}
+#Shapiro
+shapiro.test(muestraA$tiempo.A)
+shapiro.test(muestraB$tiempo.B)
+```
+
+Considerando un $\alpha = 0.05$, se tiene que ambos test de normalidad fallan con p-value de 0.001783 y 0.03361, dando por resultado que ninguna de las muestras de tiempo posee una distribución cercana a la normal.
+
+Por lo tanto, se usará la alternativa a la prueba t de Student, la prueba de Wilcoxon de suma de rangos, haciendo uso de las siguientes hipotesis:
+
+ - *Lenguaje Natural*
+
+$$
+H_0: \text{No hay diferencia en el tiempo de ejecución de ambos algoritmos}
+$$
+
+$$
+H_a: \text{Si hay diferencia en el tiempo de ejecución de ambos algoritmos}
+$$
+
+ - *Lenguaje Matemático*
+
+$$
+H_0: \mu_{A} = \mu_{b}
+$$
+
+$$
+H_a: \mu_{A} \neq \mu_{b}
+$$
+
+#### 3. Realizacion de la prueba:
+
+Con el uso de la funcion de R wilcox.test() se puede realizar la prueba de suma de rangos de Wilcoxon.
+
+```{r}
+alfa <- 0.05
+prueba <- wilcox.test(muestraA$tiempo.A, muestraB$tiempo.B,
+                      alternative = "two.sided",
+                      conf.level = 1 - alfa)
+prueba
+```
+
+Viendo el resultado de la prueba, considerando un $\alpha = 0.05$ y el p-value resultante de 0.03605, se rechaza la hipótesis nula en favor de la alternativa, resultando en que, en favor de la sospecha de la memorista, si existen diferencias significativas en el uso del algoritmo A y el algoritmo B en el desarrollo del problema del vendedor viajero.
+
+<br>
+
+## Pregunta 2
+
+La memorista también sospecha que, al comparar las mismas instancias de prueba con iguales características, las mejores soluciones encontradas por las versiones B y C tienen rendimientos distintos. ¿Estará en lo cierto?
+Para responder, filtren los datos para tener las instancias con 70 o más nodos y seleccionen las columnas con el mejor rendimiento de las versiones B y C en formato ancho. Usando como semilla el valor 71, obtengan una muestra aleatoria de 24 instancias. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+#### 1. Primero, se filtran los datos
+
+```{r}
+filtro2 <- datos %>% filter(n.nodos > 69)
+filtro2$tiempo.A  <- NULL
+filtro2$mejor.A <- NULL
+
+set.seed(71)
+muestra <- filtro2[sample(nrow(filtro2), 24), ]
+head(muestra)
+```
+
+#### 2. Condiciones paramétricas:
+
+Se intenta realizar una prueba T de Student, por lo que se verificarán las siguientes condiciones:
+
+ - Las observaciones de ambas muestras son independientes
+
+*La manera en que se tomaron las muestras del conjunto de datos permite asegurar la independencia entre cada uno de los grupos estudiados, pues se seleccionaron una muestra aleatoria total de 44 datos, y se separaron en una muestra de 24 y otra de 20*
+
+ - La escala de medición empleada debe ser a lo menos ordinal, de modo que tenga sentido hablar de relaciones de orden (“igual que”, “menor que”, “mayor o igual que”)
+
+*En este caso se está trabajando con el tiempo que tardaron cada uno de los algoritmos en resolver un mismo problema, por lo tanto, la escala es más que solo ordinal.*
+
+ - Las observaciones provienen de una distribución cercana a la normal
+
+*Para revisar la normalidad de los datos a estudiar, se realiza un gráfico Q-Q para conocer la normalidad de la población de origen de las muestras.*
+
+```{r}
+#Grafico Q-Q
+muestra <- transform(muestra,
+                     mejor.B = as.numeric(mejor.B),
+                     mejor.C = as.numeric(mejor.C))
+
+g1 <- ggqqplot(muestra, x = "mejor.B", color = "red")
+
+g2 <- ggqqplot(muestra, x = "mejor.C",
+               color = "blue")
+
+
+g <- ggarrange(g1, g2, ncol = 2, nrow = 1, common.legend = TRUE)
+print(g)
+```
+
+Al realizar el gráfico Q-Q, se observan que los datos visualmente se encuentran dispersos, pero para asegurarse que la población del ejemplo no sigue una distribución normal, se realizará la prueba de normalidad de Shapiro
+
+```{r}
+#Shapiro
+shapiro.test(muestra$mejor.B)
+shapiro.test(muestra$mejor.C)
+```
+
+Considerando un $\alpha = 0.05$, se tiene que ambos test de normalidad fallan con p-value de 0.007517 y 0.002407, dando por resultado que ninguna de las muestras de tiempo posee una distribución cercana a la normal.
+
+Por lo tanto, se usará la alternativa a la prueba t de Student, la prueba de Wilcoxon de suma de rangos con signo, haciendo uso de las siguientes hipótesis:
+
+ - *Lenguaje Natural*
+
+$$
+H_0: \text{Las mejores soluciones encontradas por las versiones B y C no tienen rendimientos distintos}
+$$
+
+$$
+H_a: \text{Las mejores soluciones encontradas por las versiones B y C tienen rendimientos distintos}
+$$
+
+ - *Lenguaje Matemático*
+
+$$
+H_0: \mu_{mejorB} = \mu_{mejorC}
+$$
+
+$$
+H_a: \mu_{mejorB} \neq \mu_{mejorC}
+$$
+
+#### 3. Realizacion de la prueba:
+
+Con el uso de la función de R wilcox.test() se puede realizar la prueba de suma de rangos con signos de Wilcoxon.
+
+```{r}
+# Establecer nivel de significación.
+alfa <- 0.05
+
+# Hacer la prueba de rangos con signo de Wilcoxon .
+prueba <- wilcox.test(muestra$mejor.B,
+                      muestra$mejor.C,
+                      alternative = "two.sided",
+                      paired = TRUE,
+                      conf.level = 1 - alfa)
+prueba
+```
+
+Viendo el resultado de la prueba, considerando un $\alpha = 0.05$ y el p-value resultante de 0.002575, se rechaza la hipótesis nula en favor de la alternativa, resultando en que, en favor de la sospecha de la memorista, si existen diferencias significativas en las mejores soluciones encontradas por el algoritmo B y C.
+
+<br>
+
+## Pregunta 3
+
+La memorista además cree que hay diferencias significativas en el tiempo de ejecución entre las diferentes versiones del algoritmo cuando las instancias de prueba tienen 50 o más nodos. ¿Los datos respaldan la intuición de la memorista?
+Para responder, filtren los datos para tener las instancias con 50 o más nodos y seleccionen las columnas con los tiempos de ejecución registrados (en formato ancho). Usando como semilla el valor 31, obtengan muestras aleatorias independientes de 14, 12 y 13 tiempos registrados por las versiones A, B y C, respectivamente. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+#### 1. Primero, se filtran los datos
+
+```{r}
+filtro3 <- datos %>% filter(n.nodos > 49)
+
+set.seed(31)
+muestra <- filtro3[sample(nrow(filtro3), 39), ]
+head(muestra)
+
+muestraA <- muestra[1:14, ]
+muestraB <- muestra[15:26, ]
+muestraC <- muestra[27:39, ]
+```
+
+
+#### 2. Condiciones paramétricas
+
+Se intenta realizar una prueba ANOVA de una vía para muestras independientes, por lo que se verificarán las siguientes condiciones:
+
+ - La escala con que se mide la variable dependiente tiene las propiedades de una escala de intervalos iguales.
+
+*El tiempo posee una escala de intervalos iguales, por ejemplo, si en una muestra se tiene una instancia con tiempo de 100000 y otra con tiempo de 50000 ms, es equivalente a la diferencia de tiempo entre dos instancias con 200000 y 150000 ms*
+
+ - Las 3 muestras son obtenidas de manera aleatoria e independiente desde la(s) población(es) de origen.
+
+*Al obtener los datos, se filtraron inicialmente 39 datos aleatoriamente y, basándose en esa muestra, se separó en 3, asegurándose que las instancias no se repitieran entre ellas, garantizándose así la independencia*
+
+ - Se puede suponer razonablemente que la(s) población(es) de origen sigue(n) una distribución normal.
+
+*Para revisar la normalidad de los datos a estudiar, se realiza un grafico Q-Q para conocer la normalidad de la población de origen de las muestras.*
+```{r}
+g1 <- ggqqplot(muestraA, x = "tiempo.A", color = "red")
+
+g2 <- ggqqplot(muestraB, x = "tiempo.B", color = "blue")
+
+g3 <- ggqqplot(muestraC, x = "tiempo.C", color = "green")
+
+g <- ggarrange(g1, g2, g3, ncol = 3, nrow = 1, common.legend = TRUE)
+print(g)
+```
+
+Al realizar el gráfico Q-Q, se observan que los datos visualmente se encuentran cercanos a los límites del gráfico. Para asegurarse que la población del ejemplo sigue una distribución normal, se realizará la prueba de normalidad de Shapiro
+
+```{r}
+shapiro.test(muestraA$tiempo.A)
+shapiro.test(muestraB$tiempo.B)
+shapiro.test(muestraC$tiempo.C)
+```
+
+Considerando que los valores para la muestra A en la prueba de normalidad de Shapiro da un p-value menor a 0.05 ($p-value = 0.01927$), no se puede suponer razonablemente que todas las poblaciones de origen siguen una distribución normal
+
+Y basándose en este punto, al no cumplirse la condición de normalidad, no es necesario demostrar si se cumple o no la condición de que las 3 muestras tienen varianzas aproximadamente iguales, pues no se puede usar una prueba ANOVA.
+
+Al tener muestras de diferentes tamaños, se empleará la prueba de Kruskal - Wallis y se procederá a realizar las condiciones para su uso:
+
+#### 3. Condiciones no parametricas:
+
+-  La variable independiente debe tener a lo menos dos niveles
+
+*En este caso, se poseen 3 niveles en la variable independiente: algoritmo A, B y C.*
+
+ - La escala de la variable dependiente debe ser, a lo menos, ordinal.
+
+*La escala de la variable dependiente es de intervalos iguales, por lo tanto, se cumple la condición*
+
+ - Las observaciones son independientes entre sí.
+
+*Como se dijo en las condiciones de ANOVA, los datos son independientes.*
+
+Entonces se puede utilizar Kruskall-Wallis con las siguientes hipótesis:
+
+Lenguaje natural:
+$$
+H_0: \text{No hay diferencia significativa en el tiempo de ejecución de los algoritmos}
+$$
+
+$$
+H_a: \text{Si hay diferencia significativa en el tiempo de ejecución de los algoritmos}
+$$
+
+Lenguaje Matemático:
+$$H_0: \mu_{AlgA} = \mu_{AlgB} = \mu_{AlgC} $$
+
+$$H_a: \mu_{AlgA} \neq \mu_{AlgB} \vee \mu_{AlgB} \neq \mu_{AlgC} \vee  \mu_{AlgA} \neq \mu_{AlgC} $$
+
+#### 4. Realizacion de la prueba:
+
+```{r}
+A <- muestraA$tiempo.A
+B <- muestraB$tiempo.B
+C <- muestraC$tiempo.C
+
+tiempo <- c(A, B, C)
+algoritmo <- c(rep("A", length(A)),
+               rep("B", length(B)),
+               rep("C", length(C)))
+algoritmo <- factor(algoritmo)
+datos3 <- data.frame(tiempo, algoritmo)
+alfa <- 0.05
+prueba3 <- kruskal.test(tiempo ~ algoritmo, data = datos3)
+prueba3
+```
+
+La prueba de kruskal entrega un $p-value = 0.03422$. Con un nivel de significancia de 0.05 se rechaza la hipótesis nula en favor de la alternativa, resultando en que al menos uno de los algoritmos tiene un rendimiento distinto a los demás. Para buscar cuál de los algoritmos es distinto a los demás, se realizará una prueba post-hoc con método de holm.
+
+#### 5. Realizacion de la prueba Post-hoc:
+
+```{r}
+post_hoc <- pairwise.wilcox.test(datos3$tiempo, datos3$algoritmo, p.adjust.method = "holm", paired = FALSE)
+```
+
+Con el procedimiento post-hoc de Holm, considerando un nivel de significación de 0.05, se puede concluir con un 95% de confianza que existen diferencias significativas entre los algoritmos B y C. En cambio, entre A con C y A con B no hay diferencias significativas.
+
+<br>
+
+## Pregunta 4
+
+La memorista también intuye que, al comparar las mismas instancias de prueba con iguales características, las mejores soluciones encontradas por las diferentes versiones del algoritmo tienen rendimientos distintos. ¿Estará en lo cierto?
+Para responder, filtren los datos para tener las instancias con 50 o más nodos y seleccionen las columnas con los mejores rendimientos registrados. Usando como semilla el valor 31, obtengan una muestra aleatoria de 22 instancias. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+#### 1. Primero, se filtran los datos
+
+```{r}
+filtro4 <- datos %>% filter(n.nodos > 49)
+
+set.seed(31)
+muestra4 <- filtro4[sample(nrow(filtro4), 22), ]
+head(muestra)
+```
+
+#### 2. Condiciones paramétricas
+
+Se intentará llevar a cabo un procedimiento ANOVA de una vía con muestras correlacionadas, para ello se verificará si se cumplen las siguientes condiciones:
+
+ - La escala con que se mide la variable dependiente tiene las propiedades de una escala de intervalos
+iguales.
+
+*El tiempo posee una escala de intervalos iguales, por ejemplo, si en una muestra se tiene una instancia con tiempo de 100000 y otra con tiempo de 50000 ms, es equivalente a la diferencia de tiempo entre dos instancias con 200000 y 150000 ms.*
+
+ - Las mediciones son independientes al interior de cada grupo.
+
+*Los datos al interior de cada grupo son tomados de distintas iteraciones, por lo tanto, son independientes al interior de cada grupo.*
+
+ - Se puede suponer razonablemente que las poblaciones de origen siguen una distribución normal.
+
+*Para revisar la normalidad de los datos a estudiar, se realizó un gráfico Q-Q para conocer la normalidad de la población de origen de las muestras.*
+
+```{r}
+muestra4 <- transform(muestra4,
+                      mejor.A = as.numeric(mejor.A),
+                      mejor.B = as.numeric(mejor.B),
+                      mejor.C = as.numeric(mejor.C))
+
+g1 <- ggqqplot(muestra4, x = "mejor.A", color = "red")
+
+g2 <- ggqqplot(muestra4, x = "mejor.B", color = "blue")
+
+g3 <- ggqqplot(muestra4, x = "mejor.C", color = "green")
+
+g <- ggarrange(g1, g2, g3, ncol = 3, nrow = 1, common.legend = TRUE)
+print(g)
+```
+
+Al realizar el gráfico Q-Q, se observan que los datos visualmente se encuentran dispersos, pero para asegurarse, a continuación, que la población del ejemplo no sigue una distribución normal, se realizará la prueba de normalidad de Shapiro
+
+```{r}
+shapiro.test(muestra4$mejor.A)
+shapiro.test(muestra4$mejor.B)
+shapiro.test(muestra4$mejor.C)
+```
+
+Considerando un $\alpha = 0.05$, se tiene que los tres test de normalidad fallan con p-value de 0.007075 y 0.006101, dando por resultado que solamente las mejores marcas del algoritmo B de la muestra posee una distribución cercana a la normal.
+
+Como no se puede suponer razonablemente que la población de origen sigue una distribución normal, no es necesario estudiar si la matriz de varianzas-covarianzas es esférica, por lo tanto, en vez de realizar una prueba ANOVA para muestras correlacionadas, se realizará su alternativa no paramétrica: prueba de Friedman
+
+#### 3. Condiciones no paramétricas
+
+ - La variable independiente debe ser categórica y tener a lo menos tres niveles.
+
+*La variable categórica corresponde a los distintos algoritmos utilizados, por lo tanto, se tienen 3 niveles.*
+
+ - La escala de la variable dependiente debe ser, a lo menos, ordinal.
+
+*Como la escala es de intervalos iguales, se cumple esta condición.*
+
+ - Los sujetos son una muestra aleatoria e independiente de la población.
+
+*Como se demostró al proceder con ANOVA anteriormente, los sujetos son independientes*
+
+Entonces se puede utilizar la prueba de Friedman con las siguientes hipótesis:
+
+Lenguaje natural:
+$$
+H_0: \text{Las mejores soluciones encontradas por las diferentes versiones del algoritmo tienen rendimientos iguales}
+$$
+
+$$
+H_a: \text{Las mejores soluciones encontradas por las diferentes versiones del algoritmo tienen rendimientos distintos}
+$$
+
+Lenguaje Matemático:
+$$H_0: \mu_{mejorA} = \mu_{mejorB} = \mu_{mejorC} $$
+
+$$H_a: \mu_{mejorA} \neq \mu_{mejorB} \vee \mu_{mejorB} \neq \mu_{mejorC} \vee  \mu_{mejorA} \neq \mu_{mejorC} $$
+
+#### 4. Realizacion de la prueba:
+
+```{r}
+A <- muestra4$mejor.A
+B <- muestra4$mejor.B
+C <- muestra4$mejor.C
+
+tiempo <- c(A, B, C)
+algoritmo <- c(rep("A", length(A)),
+               rep("B", length(B)),
+               rep("C", length(C)))
+algoritmo <- factor(algoritmo)
+id <- muestra4$instancia
+datos4 <- data.frame(id, tiempo, algoritmo)
+alfa <- 0.05
+prueba <- friedman.test(tiempo ~ algoritmo | id, data = datos4)
+prueba
+```
+
+La prueba de Friedman entrega un $p-value = 0.0007956$, entonces, con un nivel de significancia de 0.05 se rechaza la hipótesis nula en favor de la alternativa, resultando en que al menos uno de los algoritmos tiene un rendimiento de la mejor solución encontrada distinto a los demás. Para buscar cuál de los algoritmos es distinto a los demás, se realizará una prueba post-hoc con método de holm.
+
+#### 5. Realizacion de la prueba Post-hoc:
+
+```{r}
+post_hoc <- pairwise.wilcox.test(datos4$tiempo, datos4$algoritmo, p.adjust.method = "holm", paired = TRUE)
+print(post_hoc)
+```
+
+Al realizar el procedimiento post-hoc de Holm, considerando un nivel de significación de 0.05, se puede concluir con un 95% de confianza que existen diferencias significativas entre los algoritmos A con B y A con C. En cambio, entre B y C no hay diferencias significativas. Entonces, el algoritmo A es el que tiene los mejores tiempos más distintos que el resto de algoritmos.
+

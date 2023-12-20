@@ -1,0 +1,164 @@
+---
+title: "EI-06"
+author: "Grupo 4"
+date: "2023-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Actividades
+Un equipo de investigadores del área de interacción humano-información está estudiando si el área temática y el nivel de dificultad del problema de información influyen en el tiempo (en segundos) que toma un usuario en formular una consulta de búsqueda para resolver dicho problema. Para ello, han reclutado a un grupo de participantes voluntarios, asignados aleatoriamente a distintos grupos. Cada participante debe resolver tres problemas de información con diferentes niveles de dificultad: baja, media y alta. A su vez, cada grupo debe resolver problemas relacionados a una temática diferente.
+
+### Enunciado Equipo 4:
+
+En este momento, los investigadores buscan determinar si existen diferencias en el tiempo que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad en el área de biología.
+
+```{r, echo= FALSE, include= FALSE}
+libraries <- c("ggpubr", "PASWR2", "tidyverse","dplyr", "ez", "nlme", "emmeans")
+
+lapply(libraries, function(package) {
+  if (!require(package, character.only = TRUE)) {
+    install.packages(package, dependencies = TRUE)
+    library(package, character.only = TRUE)
+  } else {
+    library(package, character.only = TRUE)
+  }
+})
+
+```
+
+
+## Obtener datos
+
+Se carga el conjunto de datos EP05 Datos.csv.
+
+```{r cargar datos}
+datos <- read.csv2("EP05 Datos.csv", header = TRUE, sep = ",")
+head(datos)
+```
+
+Se filtran los datos según el enunciado, modificándolos para que estén en un formato largo.
+
+```{r filtrado}
+
+datos3Grupos <- datos %>% filter(area == "Biología")
+
+instancia <- factor(1:200)
+datosAlta <- datos3Grupos %>% filter(dificultad == "Alta")
+datosMedia <- datos3Grupos %>% filter(dificultad == "Media")
+datosBaja <- datos3Grupos %>% filter(dificultad == "Baja")
+
+datos <- data.frame(instancia, datosAlta$tiempo, datosMedia$tiempo, datosBaja$tiempo)
+
+datos <- datos %>% pivot_longer(c("datosAlta.tiempo", "datosMedia.tiempo", "datosBaja.tiempo"), names_to = "dificultad", values_to = "tiempo")
+                               
+datos[["dificultad"]] <- factor(datos[["dificultad"]])
+
+```
+
+## Condiciones para ANOVA para muestras correlacionadas
+
+A continuación se verifica si se cumplen las condiciones para realizar un test DE ANOVA de muestras correlacionadas:
+
+1. La escala con que se mide la variable dependiente tiene las propiedades de una escala de intervalos iguales: Esto se verifica debido a que la variable es el tiempo, y esta es una magnitud física con escala de razón (y escala de intervalos iguales)
+2. Las mediciones son independientes al interior de cada grupo: Se asume debido al contexto, ya que se dice que las muestras se obtuvieron de manera aleatoria, y son menores al 10% de la población mundial de estudiantes, por lo tanto, son obtenidas de forma aleatoria e independientes
+3. Se puede suponer razonablemente que las poblaciones de origen de las muestras siguen una distribución normal: Se verifica con base al análisis de los gráficos QQplot
+4. La matriz de varianzas-Covarianzas es esférica: Se probará la prueba de esfericidad de Mauchly con la función ezANOVA.
+
+
+## Hipótesis
+
+Postulando las hipótesis para la prueba ANOVA de muestras correlacionadas, las cuales son:
+
+$$
+H_0 : \text{el tiempo promedio que tardan los usuarios en formular consultas para problemas con diferentes niveles de dificultad en el área de biología es igual.}
+$$
+
+$$
+H_a: \text{el tiempo promedio que tardan los usuarios en formular consultas para problemas con diferentes niveles de dificultad en el área de biología difiere en al menos uno de los niveles de dificultad.}
+$$
+
+De forma matemática, siendo $\mu_{\text{alta}}$ la media del tiempo del grupo de biología con dificultad alta, y $\mu_{\text{media}}$ y $\mu_{\text{baja}}$ las medias del grupo de biología con dificultades media y baja respectivamente.
+
+$$
+\begin{align*}
+H_0: & \mu_{\text{alta}} = \mu_{\text{media}} = \mu_{\text{baja}} \\
+H_a: & \mu_{\text{alta}} \neq \mu_{\text{media}} \, || \, \mu_{\text{media}} \neq \mu_{\text{baja}} \, || \, \mu_{\text{alta}} \neq \mu_{\text{baja}}
+\end{align*}
+$$
+
+## QQplot
+
+Aplicando QQplot a las muestras.
+
+```{r pruebas de normalidad}
+g <- ggqqplot(datos, x = "tiempo", y = "dificultad", color = "dificultad")
+g <- g + facet_wrap(~ dificultad)
+g <- g + rremove("x.ticks") + rremove("x.text")
+g <- g + rremove("y.ticks") + rremove("y.text")
+g <- g + rremove("axis.title")
+print(g)
+```
+
+Se puede confirmar que las muestras tienden a seguir una distribución normal, y como no hay presencia de outliers en los gráficos quantil quantil, se define un alfa equivalente a 0.05.
+
+## Aplicando ANOVA
+
+Se aplica de prueba ANOVA para muestras correlacionadas utilizando la función ezANOVA.
+
+```{r test de hipótesis}
+
+prueba <- ezANOVA(data = datos, dv = tiempo, within = dificultad,
+			wid = instancia, return_aov = TRUE)
+```
+
+De la prueba de esfericidad entregada por la función ezANOVA se obtiene un p-value > 0.05, por lo que los datos satisfacen la condición de esfericidad. 
+
+```{r resultado esfericidad}
+prueba[["Mauchly's Test for Sphericity"]]
+```
+
+
+Como resultado del ANOVA se obtiene un p-value < 0.05, por lo tanto, se rechaza la hipótesis nula ($h_0$) y se acepta la hipótesis alternativa ($h_a$), es decir, existe al menos una diferencia significativa entre los niveles. Como resultado, se determina realizar un Análisis POST-HOC, para determinar entre que grupos hay diferencias significativas.
+
+```{r resultado ANOVA}
+prueba$ANOVA
+```
+
+En el siguiente gráfico se pueden observar las medias para el tipo de dificultad.
+
+```{r gráfico medias}
+g2 <- ezPlot(data = datos, dv = tiempo, within = dificultad,
+              wid = instancia, y_lab = "Tiempo por dificultad" , x = dificultad)
+
+print(g2)
+```
+
+
+## Procedimiento PostHoc 
+
+El estudio Holm dice que hay diferencias entre todas las dificultades. Esto se puede observar mirando el gráfico g2 para saber cuál es mayor y cuál menor
+
+```{r pruebas post hoc holm}
+# Holm
+holm <- pairwise.t.test(datos[["tiempo"]], datos[["dificultad"]],
+                        p.adj= "holm", paired = TRUE)
+holm
+```
+
+Lo mismo dice la prueba de TukeyHSD con todos los p-value < 0.05.
+
+```{r pruebas post hoc tukeyHSD}
+# TukeyHSD
+mixto <- lme(tiempo ~ dificultad, data = datos, random = ~1|instancia)
+medias <- emmeans(mixto, "dificultad")
+tukey <- pairs(medias, adjust = "tukey")
+tukey
+```
+
+Finalmente, se puede decir que existen diferencias significativas en el tiempo que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad en el área de biología. Los problemas de mayor dificultad tomaron el mayor tiempo promedio, seguido de los de dificultad baja y por último los problemas de dificultad media.
+

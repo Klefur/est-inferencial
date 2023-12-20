@@ -1,0 +1,335 @@
+---
+title: "EP11-respuesta-equipo-2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggpubr)
+library(dplyr)
+library(car)
+library(caret)
+library(leaps)
+library(boot)
+```
+
+### Datos
+##### 1. Definir la semilla a utilizar, que corresponde a los primeros cinco dígitos del RUN del integrante de mayor edad del equipo.
+
+```{r}
+set.seed(19527)
+```
+
+
+##### 2. Seleccionar una muestra de 100 personas, asegurando que la mitad tenga estado nutricional “sobrepeso” y la otra mitad “no sobrepeso”.
+```{r}
+data <- read.csv2("EP09 Datos.csv", header = TRUE)
+
+data$IMC <- data$Weight / (data$Height*0.01)^2
+# Sobrepreso = 1
+# No sobrepreso = 0
+data$EN <- ifelse(data$IMC >= 25.0, 1, 0)
+```
+
+muestra
+```{r}
+# personas con sobrepeso
+sp = data[data$EN == 1,]
+mSobre = sample_n(sp, 50)
+
+# personas sin sobrepeso
+nsp = data[data$EN == 0,]
+mNsobre = sample_n(nsp, 50)
+
+# juntar ambas muestras
+muestras = rbind(mSobre,mNsobre)
+
+# reordenar muestras
+muestras = sample_n(muestras,100)
+```
+
+### Selección de predictores y Modelo
+##### 3. Usando las herramientas del paquete leaps, realizar una búsqueda exhaustiva para seleccionar entre dos y ocho predictores que ayuden a estimar la variable Peso (Weight), obviamente sin considerar las nuevas variables IMC ni EN, y luego utilizar las funciones del paquete caret para construir un modelo de regresión lineal múltiple con los predictores escogidos y evaluarlo usando bootstrapping.
+
+```{r}
+# Ajustar modelo con todos los subconjuntos
+modelos <- regsubsets( Weight ~ . - IMC - EN - Height , data = muestras , method = "exhaustive" , nbest = 1 , nvmax = 8)
+plot(modelos)
+```
+
+Según los resultados de regsubsets considerando un modelo con BIC = -290 utilizaremos como variables predictoras Biacromial.diameter, Bitrochanteric.diameter, Chest.Girth, Waist.Girth, Thigh.Girth, Knee.Girth y Age.
+
+A continuación construiremos el modelo de regresión lineal múltiple evaluandolo con Bootstraping
+
+```{r}
+# datos de entrenamiento (70% de los datos)
+muestras_entrenamiento <- head(muestras,70)
+
+# Configuramos el control con bootstraping
+control <- trainControl(method = "boot", number = 1000)
+
+# Ajustamos el modelo
+modelo_boot <- train(Weight ~ Biacromial.diameter + Bitrochanteric.diameter + Chest.Girth + Waist.Girth + Thigh.Girth + Knee.Girth + Age,
+                   data = muestras_entrenamiento,
+                   method = "lm",
+                   trControl = control)
+
+# Revisamos los resultados
+summary(modelo_boot)
+```
+
+Graficar el modelo
+```{r}
+# modelo boot final
+mbf <- modelo_boot$finalModel
+plot(mbf)
+```
+
+Evaluar la calidad del modelo
+```{r}
+# Nivel de ajuste
+print(AIC(mbf))
+```
+
+Calidad predictiva
+```{r}
+# MSE conjunto de entrenamiento
+mse_entrenamiento <- mean(mbf$residuals ** 2)
+cat("error cuadrático medio para conjunto de entrenamiento:", mse_entrenamiento, "\n")
+
+# MSE conjunto de prueba
+muestras_pruebas <- tail(muestras,30)
+predicciones <- predict(mbf, muestras_pruebas)
+error <- muestras_pruebas$Weight - predicciones
+mse_prueba <- mean(error ** 2)
+cat("error cuadrático medio para el conjunto de prueba:", mse_prueba, "\n")
+```
+
+Se observa que el MSE para el conjunto de entrenamiento es 6.4625 mientras que al evaluar en el conjunto de prueba se obtiene un MSE de 7.862, un cambio relativamente bajo, aproximadamente de un 17% respecto del valor original, por lo que el modelo podría ser generalizable.
+
+Para que un modelo de regresión lineal sea generalizable se deben cumplir las siguientes condiciones:  
+1- Las variables predictoras deben ser cuantitativas o dicotómicas (de ahí la necesidad de variables indicadoras para manejar más de dos niveles).  
+2- La variable de respuesta debe ser cuantitativa y continua, sin restricciones para su variabilidad.  
+3- Los predictores deben tener algún grado de variabilidad (su varianza no debe ser igual a cero). En otras
+palabras, no pueden ser constantes.  
+4- No debe existir multicolinealidad. Esto significa que no deben existir relaciones lineales fuertes entre
+dos o más predictores (coeficientes de correlación altos).  
+5- Los residuos deben ser homocedásticos (con varianzas similares) para cada nivel de los predictores.  
+6- Los residuos deben seguir una distribución cercana a la normal centrada en cero.  
+7- Los valores de la variable de respuesta son independientes entre sí.  
+8- Cada predictor se relaciona linealmente con la variable de respuesta.  
+
+La primera condición se cumple pues todas las variables predictoras (Biacromial.diameter, Bitrochanteric.diameter, Chest.Girth, Waist.Girth, Thigh.Girth, Knee.Girth y Age) son cuantitativas.
+
+La segunda condición se cumple pues la variable de respuesta (Weigth) es una variable cuantitativa continua sin restricciones.
+
+Se nos indica que los valores de la variable de respuesta entregados son independientes entre sí.
+
+Las siguientes condiciones se verifican utilizando pruebas en R.
+
+```{r}
+# Correlación (relación lineal con la variable de respuesta)
+cor(muestras,muestras$Weight)
+```
+
+Se observa que todas las variables tienen una relación lineal con la variable de respuesta.
+
+```{r}
+# Independencia de los residuos
+print(durbinWatsonTest(mbf))
+```
+
+Como el p-value de la prueba de Durbin-Watson es 0.392 > 0.05 se se falla en rechazar la hipótesis nula de la prueba, por lo que se determina que los residuos son independientes.
+
+```{r}
+# Multicolinealidad
+vifs <- vif(mbf)
+print(vifs)
+print(mean(vifs))
+```
+
+Ya que ningún valor es mayor a 10 se considera que no hay problemas. Sin embargo, según cierta literatura podría considerarse que algunas variables tienen un VIF muy alto y que el modelo no cumple con las condiciones para ser generalizable. En este caso, nos quedaremos con que si los VIFS son menores a 10 cumple.
+
+```{r}
+print(1 / vifs)
+```
+
+Los valores de Chest.Girth y Waist.Girth al estar bajo 0.2 podrían ser problemáticos
+
+```{r}
+cat("- VIF medio:", mean(vifs), "\n")
+```
+
+Como el VIF medio es 3.8755 > 1 podría haber sesgo en el modelo
+
+```{r}
+# Homocedasticidad de los residuos
+print(ncvTest(mbf))
+```
+
+Con p-value = 0.273 se cumple el supuesto de homocedasticidad de los residuos (la varianza de los residuos no es igual a 0)
+
+```{r}
+# Normalidad de los residuos
+print(shapiro.test(mbf$residuals))
+```
+
+Con p-value = 0.3547 se cumple el supuesto de que los residuos se distribuyen de forma normal
+
+Considerando los riesgos presentes del modelo se realiazará otro modelo pero sin los predictores Chest.Girth ni Waist.Girth
+
+```{r}
+# Ajustamos el modelo
+modelo_boot2 <- train(Weight ~ Biacromial.diameter + Bitrochanteric.diameter + Thigh.Girth + Knee.Girth + Age,
+                   data = muestras_entrenamiento,
+                   method = "lm",
+                   trControl = control)
+
+# Revisamos los resultados
+summary(modelo_boot2)
+
+mbf2 <- modelo_boot2$finalModel
+
+# Calidad del modelo
+print(AIC(mbf2))
+
+# generalizable
+print(durbinWatsonTest(mbf2))
+
+# Como el p-value de la prueba de Durbin-Watson es 0.774 > 0.05 los residuos son independientes.
+
+# Comprobar normalidad de los residuos
+print(shapiro.test(mbf2$residuals))
+
+# Con p-value = 0.5231 se cumple el supuesto de que los residuos se distribuyen de forma normal
+
+# Comprobar homocedasticidad de los residuos.
+print(ncvTest(mbf2))
+
+# Con p-value = 0.1934 se cumple el supuesto de homocedasticidad de los residuos (la varianza de los residuos son similares)
+
+# Comprobar la multicolinealidad.
+vifs <- vif(mbf2)
+cat("\nVerificar la multicolinealidad:\n")
+cat("_ VIFs: \n")
+print (vifs)
+
+# Ya que ningún valor es mayor a 10 se considera que no problemas
+
+cat("- Tolerancias:\n")
+print(1 / vifs)
+
+# Ningún valor está bajo 0.2
+
+cat("- VIF medio:", mean(vifs), "\n")
+
+# El VIF medio sigue siendo mayor a 1 por lo que podría seguir sesgado pero en menor grado
+```
+
+
+##### 4. Haciendo un poco de investigación sobre el paquete caret, en particular cómo hacer Recursive Feature Elimination (RFE), construir un modelo de regresión lineal múltiple para predecir la variable IMC que incluya entre 10 y 20 predictores, seleccionando el conjunto de variables que maximice R2 y que use cinco repeticiones de validación cruzada de cinco pliegues para evitar el sobreajuste (obviamente no se debe considerar las variables Peso, Estatura ni estado nutricional –Weight, Height, EN respectivamente).
+
+```{r}
+# Crear un subconjunto de datos sin las variables Weight, Height, IMC y EN
+subconjunto <- muestras[, !(names(muestras) %in% c("Weight", "Height", "IMC", "EN"))]
+
+# Configurar el control de validación cruzada
+control_rfe <- rfeControl(functions = lmFuncs, method = "cv", number = 5, repeats = 5)
+
+# Realizar RFE
+resultado_rfe <- rfe(subconjunto, muestras$IMC, sizes = 10:20, rfeControl = control_rfe)
+
+# Mostrar los resultados
+print(resultado_rfe)
+```
+
+CALIDAD
+
+```{r}
+# Comprobar independencia de los residuos.
+cat ("Prueba de Durbin - Watson para autocorrelaciones")
+cat ("entre errores :\ n ")
+print(durbinWatsonTest(resultado_rfe$fit))
+#Como p=0.292, se falla en rechazar la hipótesis nula de la prueba, la cual permite determinar que los residuos son independientes.
+
+#Comprobar normalidad de los residuos
+cat ("\ nPrueba de normalidad para los residuos:\n" )
+print(shapiro.test(resultado_rfe$fit$residuals))
+#Como p=0.5216, se falla en rechazar la hipótesis nula de la prueba, la cual permite determinar que se cumple con la normalidad de los residuos.
+
+# Comprobar homocedasticidad de los residuos.
+cat("Prueba de homocedasticidad para los residuos :\n")
+print(ncvTest(resultado_rfe$fit))
+#Como p = 0.28699, se falla en rechazar la hipótesis nula de la prueba, la cual permite determinar que se cumple con la homocedasticidad de los residuos.
+
+# Comprobamos la multicolinealidad entre las variables
+vifs <- vif(resultado_rfe$fit)
+vifs
+print(1/vifs)
+print(mean(vifs))
+#En general los valores VIFS no parecen ser preocupantes
+```
+##### 5. Usando RFE, construir un modelo de regresión logística múltiple para la variable EN que incluya el conjunto, de entre dos y seis, predictores que entregue la mejor curva ROC y que utilice validación cruzada dejando uno fuera para evitar el sobreajuste (obviamente no se debe considerar las variables Peso, Estatura –Weight y Height respectivamente– ni IMC).
+
+```{r}
+# Convertir EN a variable factor binaria
+muestras$EN <- as.factor(muestras$EN)
+
+# Crear un subconjunto de datos sin las variables Weight, Height, IMC y EN
+subconjunto_logistica <- muestras[, !(names(muestras) %in% c("Weight", "Height", "IMC", "EN"))]
+
+# Asegurarse de que el subconjunto tenga datos
+print(summary(subconjunto_logistica))
+
+# Configurar el control de validación cruzada para regresión logística
+control_rfe_logistica <- rfeControl(functions = lrFuncs, method = "cv", number = 5, repeats = 1)
+
+# Realizar RFE para regresión logística con tamaños ajustados
+resultado_rfe_logistica <- rfe(subconjunto_logistica, muestras$EN, sizes = 2:5, rfeControl = control_rfe_logistica)
+
+# Mostrar los resultados
+print(resultado_rfe_logistica)
+print(ggplot(resultado_rfe_logistica))
+
+
+```
+```{r}
+summary(resultado_rfe_logistica$fit)
+```
+
+Se observa que todas las variables tienen una relación lineal con la variable de respuesta.
+
+```{r}
+# Independencia de los residuos
+print(durbinWatsonTest(resultado_rfe_logistica$fit))
+```
+
+Como el p-value de la prueba de Durbin-Watson es 0.832 > 0.05 se se falla en rechazar la hipótesis nula de la prueba, por lo que se determina que los residuos son independientes.
+
+```{r}
+# Multicolinealidad
+vifs <- vif(resultado_rfe_logistica$fit)
+print(vifs)
+print(mean(vifs))
+```
+
+Ya que ningún valor es mayor a 10 se considera que no hay problemas. Sin embargo, según cierta literatura podría considerarse que algunas variables tienen un VIF muy alto, mayor a 5 y que el modelo no cumple con las condiciones para ser generalizable. En este caso, nos quedaremos con que si los VIFS son menores a 10 cumple.
+
+```{r}
+print(1 / vifs)
+```
+
+El valor de Shoulder-Girth al estar bajo 0.2 podrían ser problemático.
+
+```{r}
+cat("- VIF medio:", mean(vifs), "\n")
+```
+
+Como el VIF medio es 2.95 > 1 podría haber sesgo en el modelo
+
+```{r}
+# Homocedasticidad de los residuos
+print(ncvTest(mbf))
+```
+Se falla en rechazar que la varianza de los residuos son parecidos ya que p=0.27 > 0.05.
+
+En términos generales se puede decir que el modelo es razonablemente generalizable.

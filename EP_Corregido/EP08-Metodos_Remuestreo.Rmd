@@ -1,0 +1,318 @@
+---
+title: "EP-08-respuesta-equipo5"
+output: html_document
+---
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+#Librerías
+library(WRS2)
+library(boot)
+library(ggplot2)
+library(tidyverse )
+library(ggpubr)
+library(ez)
+library(multcomp)
+```
+
+## 1)
+Propongan una pregunta de investigación original, que involucre la comparación de una frecuencia de un evento o característica en dos grupos independientes (más abajo se dan unos ejemplos). Fijando una semilla propia, seleccionen una muestra aleatoria de hogares (100 < n < 150) y respondan la pregunta propuesta utilizando el método Monte Carlo.
+
+```{r}
+datos = read.csv2("EP08 Datos CASEN 2017.csv", sep = ";", fileEncoding = "latin1")
+```
+
+
+#### Pregunta de investigación
+
+1- La cantidad de hogares de la Región Metropolitana (region) en que el/la entrevistado/a tiene un trabajo permanente (o12) ¿es similar entre hombres y mujeres (sexo) casados/as (ecivil)?
+
+#### Datos
+
+```{r}
+set.seed(111)
+
+datos1 = subset(datos, select = c("region","o12","sexo","ecivil"))
+hc = subset(datos1, sexo == "Hombre" & ecivil == "Casado(a)" & region == "Región Metropolitana de Santiago" & o12 != "N/A") 
+mc = subset(datos1, sexo == "Mujer" & ecivil == "Casado(a)" & region == "Región Metropolitana de Santiago" & o12 != "N/A")
+
+# Crear la nueva columna 'trabajo_permanente' donde 1 es = permanete
+hc$trabajo_permanente <- as.numeric(hc$o12 == "Permanente?")
+mc$trabajo_permanente <- as.numeric(mc$o12 == "Permanente?")
+
+
+# Seleccionar de manera aleatoria 125 observaciones de hc
+muestra_hc <- hc[sample(nrow(hc), 125), ]$trabajo_permanente
+
+# Seleccionar de manera aleatoria 125 observaciones de mc
+muestra_mc <- mc[sample(nrow(mc), 125), ]$trabajo_permanente
+
+```
+
+#### Hipótesis
+
+Sean p1 y p2 las proporciones de hogares con trabajo permanente para hombres y mujeres casados/as, respectivamente:
+
+- Hipótesis nula (H0): P1 = P2
+- Hipótesis nula (H0): No hay diferencia significativa en la proporción de hogares con trabajo permanente entre hombres y mujeres casados/as en la Región Metropolitana.
+
+- Hipótesis alternativa(Ha): P1 != p2 
+- Hipótesis alternativa(Ha): Hay una diferencia significativa en la proporción de hogares con trabajo permanente entre hombres y mujeres casados/as en la Región Metropolitana.
+
+#### Estadístico de interés
+
+El estadístico de interés es la proporción, pues permité comparar cantidades en sus respectivos contextos y de esta manera se puede comparar dos cantidades de tamaños muy diferentes.
+
+
+```{r}
+# Definir la función para calcular la proporción de hogares con trabajo permanente
+calcular_proporcion_trabajo_permanente <- function(muestra) {
+  prop <- sum(muestra) / length(muestra)
+  return(ifelse(is.finite(prop), prop, 0))
+}
+```
+
+#### Remuestreo
+
+```{r}
+# Funciones de remuestreo y análisis estadístico
+obtiene_permutacion <- function(i, muestra_1, muestra_2) {
+  n_1 <- length(muestra_1)
+  combinada <- c(muestra_1, muestra_2)
+  n <- length(combinada)
+  permutacion <- sample(combinada, n, replace = FALSE)
+  nueva_1 <- permutacion[1: n_1]
+  nueva_2 <- permutacion[(n_1 + 1): n]
+  return(list(nueva_1, nueva_2))
+}
+
+
+calcular_diferencia <- function(muestras, FUN) {
+  muestra_1 <- muestras[[1]]
+  muestra_2 <- muestras[[2]]
+  diferencia <- FUN(muestra_1) - FUN(muestra_2)
+  return(diferencia)
+}
+
+
+calcular_valor_p <- function(distribucion, valor_observado, repeticiones, alternative) {
+  if (alternative == "two.sided") {
+    numerador <- sum(abs(distribucion) > abs(valor_observado)) + 1
+    denominador <- repeticiones + 1
+    valor_p <- numerador / denominador
+  } else if (alternative == "greater") {
+    numerador <- sum(distribucion > valor_observado) + 1
+    denominador <- repeticiones + 1
+    valor_p <- numerador / denominador
+  } else {
+    numerador <- sum(distribucion < valor_observado) + 1
+    denominador <- repeticiones + 1
+    valor_p <- numerador / denominador
+  }
+
+  return(valor_p)
+}
+
+
+graficar_distribucion <- function(distribucion, ...) {
+  observaciones <- data.frame(distribucion)
+
+  histograma <- ggplot(observaciones, aes(x = distribucion)) +
+    geom_histogram(bins = 30, fill = "blue", color = "black", alpha = 0.7) +
+    labs(x = "Estadístico de interés", y = "Frecuencia") +
+    theme_minimal()
+
+  qq <- ggplot(observaciones, aes(sample = distribucion)) +
+    stat_qq() +
+    labs(title = "Gráfico Q-Q") +
+    theme_minimal()
+
+  # Crear una única figura con todos los gráficos de dispersión.
+  figura <- gridExtra::grid.arrange(histograma, qq, ncol = 2, nrow = 1)
+  print(figura)
+}
+
+
+contrastar_hipotesis_permutaciones <- function(muestra_1, muestra_2, repeticiones, FUN, alternative, plot, ...) {
+  cat("Prueba de permutaciones\n\n")
+  cat("Hipótesis alternativa: ", alternative, "\n")
+  observado <- calcular_diferencia(list(muestra_1, muestra_2), FUN)
+  cat("Valor observado: ", observado, "\n")
+  n_1 <- length(muestra_1)
+
+  # Generar permutaciones.
+  permutaciones <- lapply(1:repeticiones, obtiene_permutacion, muestra_1,
+                          muestra_2)
+
+  # Generar la distribución.
+  distribucion <- sapply(permutaciones, calcular_diferencia, FUN)
+
+  # Graficar la distribución.
+  if (plot) {
+    graficar_distribucion(distribucion, ...)
+  }
+
+  # Calcular el valor p.
+  valor_p <- calcular_valor_p(distribucion, observado, repeticiones,
+                              alternative)
+
+  cat("Valor p: ", valor_p, "\n\n")
+}
+
+
+# Aplicar el método Monte Carlo
+contrastar_hipotesis_permutaciones(muestra_hc, muestra_mc, repeticiones = 5999, FUN = calcular_proporcion_trabajo_permanente, alternative = "two.sided", plot = TRUE, color = "blue", fill = "blue")
+
+```
+
+#### Conclusión
+
+Con un valor p = 0.296 se falla en rechazar la hipótesis nula, por lo que concluimos que no hay evidencia suficiente para argumentar que hay diferencia significativa en la proporción de hogares con trabajo permanente entre hombres y mujeres casados/as en la Región Metropolitana.
+
+## 2)
+
+Propongan una pregunta de investigación original, que involucre la comparación de las medias de más de dos grupos independientes (más abajo se dan unos ejemplos). Fijando una semilla distinta a la anterior, seleccionen una muestra aleatoria de hogares (200 < n < 300) y respondan la pregunta propuesta utilizando bootstrapping. Solo por ejercicio académico, aplique un análisis post-hoc con bootstrapping aunque este no fuera necesario.
+
+#### Pregunta de investigación
+
+2- El promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal ¿es similar entre los distintos grupos de trabajadores: asalariados, patrón o empleador/trabajador cuenta propia, familiar no remunerado/inactivos y desocupados?
+
+#### Datos
+
+Obtención de muestras.
+```{r}
+# Se establece la semilla para la reproducibilidad
+set.seed(222)
+
+# Se seleccionan las columnas de interés
+datos2 <- subset(datos, select = c("o10","o15"))
+
+# Se selecciona cada grupo
+propio <- subset(datos2, o15 == "Trabajador por cuenta propia" & !is.na(o10), select = c("o10"))
+publico <- subset(datos2, o15 == "Empleado u obrero de empresas públicas", select = c("o10"))
+privado <- subset(datos2, o15 == "Familiar no remunerado", select = c("o10")) # Aquí hay 87 datos :c
+
+# Tamaño de muestra para cada grupo
+n <- 80
+
+# Se selecciona una muestra de 80 a cada grupo
+muestra_propio <- propio[sample(nrow(propio), n), , drop = FALSE]
+muestra_publico <- publico[sample(nrow(publico), n), , drop = FALSE]
+muestra_privado <- privado[sample(nrow(privado), n), , drop = FALSE]
+```
+Aquí se obtuvo 3 muestras de 80 datos, para tener un total de 240 datos.
+
+Combinación de las muestras
+```{r}
+# Combinamos las tres muestras en un solo dataframe para realizar el ANOVA
+datos_combinados <- data.frame(
+  horas = c(muestra_propio$o10, muestra_publico$o10, muestra_privado$o10),
+  grupo = factor(rep(c("Propio", "Publico", "Privado"), each=n))
+)
+```
+
+Comprobación de normalidad.
+```{r}
+# Verificar condición de normalidad .
+g <- ggqqplot(datos_combinados, "horas", facet.by = "grupo", color = "grupo")
+g
+```
+
+Las horas de cada grupo no sigue una distribución normal, por lo que utilizará bootstrap.
+
+
+#### Hipótesis
+
+Sea u1 el promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal de los asalariados entrevistados.
+Sea u2 el promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal de los patrones o empleadores/trabajadores por cuenta propia entrevistados.
+Sea u3 el promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal de los familiares no remunerados/inactivos y desocupados entrevistados.
+
+- Hipótesis nula (H0): u1 = u2 = u3
+- Hipótesis nula (H0): No hay diferencia significativa entre el promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal entre los distintos grupos de trabajadores: asalariados, patrón o empleador/trabajador cuenta propia, familiar no remunerado/inactivos y desocupados.
+
+- Hipótesis alternativa (Ha): Existe al menos un par (i,j) tal que ui es distinto de uj, con i,j pertenecientes a [salariados, patrón o empleador/trabajador cuenta propia, familiar no remunerado/inactivos y desocupados]
+- Hipótesis alternativa (Ha): Hay diferencia significativa entre el promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal entre los distintos grupos de trabajadores: asalariados, patrón o empleador/trabajador cuenta propia, familiar no remunerado/inactivos y desocupados.
+
+#### Estadístico de Interés
+
+Se utilizará el estadístico F pues se busca comparar que tan cercanos están los datos a comprobar la hipótesis nula planteada.
+
+Obtención estadístico F original.
+```{r}
+f_statistic <- function(data, indices) {
+  d <- data[indices, ] # Re-muestreo con reemplazo
+  modelo <- aov(horas ~ grupo, data = d)
+  return(summary(modelo)[[1]][["F value"]][1]) # Devuelve el valor F
+}
+
+# Realizar el ANOVA sobre los datos originales
+anova_original <- aov(horas ~ grupo, data = datos_combinados)
+f_observado <- summary(anova_original)[[1]][["F value"]][1]
+f_observado
+```
+Acá se obtiene el estadístico de interés F = 2.798, que luego se compará con las obtenidas post un remuestreo.
+
+Graficar valores originales sin ajuste
+```{r}
+ggplot(datos_combinados, aes(x = grupo, y = horas)) +
+  geom_boxplot() +
+  labs(title = "Horas por grupo", x = "Grupo", y = "Horas")
+```
+
+#### Remuestreo
+
+Realizar el ajuste de las muestras con la fórmula:
+ Yij' = Yprom.. + (Yij - Yi.prom) * (Spooled/Si) donde:
+  Yprom.. = media general
+  Yi.prom = media del grupo
+  Spooled = sqrt(varianza general)
+  Si = varianza del grupo
+Y después aplicar bootstrap sobre las muestras ajustadas para tener varianza y media iguales
+```{r}
+# Calcular la media general
+media_general <- mean(datos_combinados$horas)
+
+# Calcular la desviación estandar general
+ds_general <- sd(datos_combinados$horas)
+
+# Ajustar las muestras
+datos_ajustado <- datos_combinados %>%
+  group_by(grupo) %>%
+  mutate(
+  horas_ajustada = media_general + (horas - mean(horas)) * (ds_general / sd(horas))
+  )
+
+# Aplicar bootstrap con 1000 repeticiones sobre las muestras ajustadas
+estadistico_boot <- boot(data = datos_ajustado, statistic = f_statistic, R = 1000)
+
+# Intervalo de confianza de la distribución F de bootstrap
+ic_bootstrap <- boot.ci(estadistico_boot, type = "bca")
+ic_bootstrap
+```
+Con intervalos de confianza del 95% se obtiene que el intervalo es entre 0.142 y 9.412
+
+Histograma de los valores de F generados por bootstrap comparando con el valor F observado
+```{r}
+hist(estadistico_boot$t, breaks = 30, main = "Distribución de los Valores F de Bootstrap",
+     xlab = "Valores F", ylab = "Frecuencia")
+abline(v = f_observado, col = "red", lwd = 2)
+```
+
+Revisar si el estadístico F original está dentro del IC para saber si rechazar o aceptar la HO
+```{r}
+cat("Estadístico F original:", f_observado, "\n")
+cat("Límite inferior del IC:", ic_bootstrap$bca[1], "\n")
+cat("Límite superior del IC:", ic_bootstrap$bca[5], "\n")
+```
+
+#### Conclusión
+Ya que el valor F original (2.798) se encuentra dentro del intervalo de confianza después del remuestreo se considera que con un 95% de confianza no hay suficiente información para rechazar la hipótesis nula que indica que existe diferencia significativa entre el promedio de la cantidad de horas trabajadas habitualmente por semana en el trabajo, negocio, o actividad principal entre los distintos grupos de trabajadores: asalariados, patrón o empleador/trabajador cuenta propia, familiar no remunerado/inactivos y desocupados.
+
+#### Post-Hoc
+```{r}
+# Se realizan las pruebas t pareadas para todas las combinaciones de grupos
+p_values <- pairwise.t.test(x = datos_combinados$horas, 
+                            g = datos_combinados$grupo, 
+                            p.adjust.method = "holm")$p.value
+p_values
+```
+Tras el análisis post-hoc se evidencia que cada par de comparaciones tienen p-values altos (sobre el nivel de significancia = 0.05), es decir, no hay evidencia en ningún par de grupos para indicar que existe diferencia en la media de horas trabajadas por semana.

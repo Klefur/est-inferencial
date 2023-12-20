@@ -1,0 +1,263 @@
+---
+title: "EP10-respuesta-equipo-4"
+output: html_document
+date: "2023-11-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### **Variable dicotómica**
+
+1. El equipo crea la variable IMC (índice de masa corporal) como el peso de una persona (en kilogramos) dividida por el cuadrado de su estatura (en metros).
+
+Para comenzar se cargan los datos y se crea la variable IMC con la fórmula:
+
+$$\frac{Weight}{(Height)^{2}}$$
+
+```{r}
+# Lectura de datos
+datos = read.csv2("EP09 Datos.csv", sep=";")
+
+# Calculo del IMC, la altura se transforma de cm a metros
+datos$IMC = datos$Weight/((datos$Height/100) * (datos$Height/100))
+```
+
+2. Si bien esta variable se usa para clasificar a las personas en varias clases de estado nutricional (bajo peso, normal, sobrepeso, obesidad, obesidad mórbida), para efectos de este ejercicio, usaremos dos clases: sobrepeso (IMC ≥ 25,0) y no sobrepeso (IMC < 25,0).
+
+3. El equipo crea la variable dicotómica EN (estado nutricional) de acuerdo al valor de IMC de cada persona.
+
+```{r}
+datos$EN = datos$IMC >= 25
+```
+
+
+#### **Modelo de regresión logística para predecir la variable EN**
+
+1. Definir la semilla a utilizar, que corresponde a los últimos cuatro dígitos del RUN (sin considerar el dígito verificador) del integrante de mayor edad del equipo.
+
+```{r}
+set.seed(4916)
+```
+
+
+2. Seleccionar una muestra de 90 mujeres (si la semilla es un número par) o 90 hombres (si la semilla es impar), asegurando que la mitad tenga estado nutricional “sobrepeso” y la otra mitad “no sobrepeso” en cada caso. Dividir esta muestra en dos conjuntos: los datos de 60 personas (30 con EN “sobrepeso”) para utilizar en la construcción de los modelos y 30 personas (15 con EN “sobrepeso”) para poder evaluarlos.
+
+Como la semilla termina en un número impar, se selecciona una muestra de 90 hombres.
+
+```{r}
+# Se obtiene una muestra de 45 personas con sobrepeso
+no_sobrepeso = datos[datos$EN == FALSE,]
+no_sobrepeso = no_sobrepeso[sample(nrow(no_sobrepeso), 45),]
+
+# Se obtiene una muestra de 45 personas sin sobrepeso
+sobrepeso = datos[datos$EN == TRUE,]
+sobrepeso = sobrepeso[sample(nrow(sobrepeso), 45),]
+
+
+# Se separan las muestras en parte de entrenamiento y de prueba
+no_sobrepeso_30 = no_sobrepeso[1:30, ]
+no_sobrepeso_15 = no_sobrepeso[31:45, ]
+
+sobrepeso_30 = sobrepeso[1:1:30, ]
+sobrepeso_15 = sobrepeso[31:45, ]
+
+# Se unen los pares de grupos para el entrenamiento y prueba
+muestra_entrenamiento = rbind(no_sobrepeso_30, sobrepeso_30)
+muestra_prueba = rbind(no_sobrepeso_15, sobrepeso_15)
+```
+
+
+
+3. Recordar las ocho posibles variables predictoras seleccionadas de forma aleatoria en el ejercicio anterior.
+
+Las variables predictoras del ejercicio anterior fueron: 
+Calf.Maximum.Girth, Thigh.Girth, Elbows.diameter, Knee.Girth, Waist.Girth, Hip.Girth, Ankles.diameter y Navel.Girth.
+
+
+4. Seleccionar, de las otras variables, una que el equipo considere que podría ser útil para predecir la clase EN, justificando bien esta selección.
+
+Se evalúan los índices de correlación de las variables con el estado nutricional
+
+```{r}
+cor(muestra_entrenamiento, muestra_entrenamiento$EN)
+```
+
+Puesto que la variable Chest.Girth presenta una mayor coeficiente de correlación entre el resto de variables, como equipo, se seleccionó esta variable.
+
+
+
+5. Usando el entorno R y paquetes estándares, construir un modelo de regresión logística con el predictor seleccionado en el paso anterior y utilizando de la muestra obtenida.
+
+Usando la función glm, obtenemos el modelo y se muestra un resumen de este.
+
+```{r}
+modelo_simple = glm(EN ~ Chest.Girth, family=binomial(link="logit"), data=muestra_entrenamiento)
+summary(modelo_simple)
+```
+
+
+
+6. Usando herramientas estándares para la exploración de modelos del entorno R, buscar entre dos y cinco predictores de entre las variables seleccionadas al azar, recordadas en el punto 3, para agregar al modelo obtenido en el paso 5.
+
+```{r}
+variables_anteriores = c(
+    "Calf.Maximum.Girth", "Thigh.Girth", "Elbows.diameter", 
+    "Knee.Girth", "Waist.Girth", "Hip.Girth", "Ankles.diameter", 
+    "Navel.Girth"
+)
+
+# Se usan solamente las variables anteriores
+datos_selec = muestra_entrenamiento[variables_anteriores]
+
+# Se agrega la variable de respuesta para poder modelar
+datos_selec$EN = muestra_entrenamiento$EN
+
+# Se genera un modelo completo para poder comparar
+modelo_completo = glm(EN ~ ., data = muestra_entrenamiento)
+
+# Comparativo del modelo actual para buscar cuál es la mejor variable a agregar
+print(add1(modelo_simple, scope = modelo_completo))
+
+# Se actualiza el modelo con una nueva variable
+modelo_multiple = update(modelo_simple, . ~ . + Thigh.Girth)
+```
+
+Actualizado el modelo se busca una nueva variable a añadir.
+
+```{r}
+print(add1(modelo_multiple, scope = modelo_completo))
+
+# Se agrega la nueva variable
+modelo_multiple = update(modelo_multiple, . ~ . + Elbows.diameter)
+
+# Resumen del modelo final
+summary(modelo_multiple)
+```
+
+Ya que solo se necesitan dos variables extra, y siguiendo el principio de parsimonia, dejamos el modelo de regresión logística múltiple sin más variables.
+
+
+7. Evaluar la confiabilidad de los modelos (i.e. que tengan un buen nivel de ajuste y son generalizables) y “arreglarlos” en caso de que tengan algún problema.
+
+Para evaluar la confiabilidad de los modelos y el sobreajuste, se tiene que usar de medida la precisión del modelo,
+ya que la respuesta de la función logística es un número sin más información.
+
+La precisión se obtiene evaluando cuantos aciertos hubo versus la cantidad de predicciones.
+
+
+*Modelo simple*
+
+```{r}
+# Se predicen las respuestas del modelo y se tabulan los datos
+predicho_entrenamiento = table((predict(modelo_simple, muestra_entrenamiento) >= 0.5) == muestra_entrenamiento$EN)
+predicho_prueba = table((predict(modelo_simple, muestra_prueba) >= 0.5) == muestra_prueba$EN)
+
+# Cálculo de relación aciertos / total predicciones
+precision_entrenamiento = predicho_entrenamiento[[2]]/(predicho_entrenamiento[[2]] + predicho_entrenamiento[[1]])
+precision_prueba = predicho_prueba[[2]]/(predicho_prueba[[2]] + predicho_prueba[[1]])
+
+# Muestra de precisión del entrenamiento y la prueba
+precision_entrenamiento
+precision_prueba
+```
+
+La precisión del modelo simple es media/baja, ya que está cercana al 60% en el conjunto de pruebas, además
+se aprecia una diferencia entre los resultados de la muestra de entrenamiento y de pruebas cercana al 10%, por
+lo se pueden observar indicios de sobreajuste.
+
+*Modelo múltiple*
+
+```{r}
+# Se predicen las respuestas del modelo y se tabulan los datos
+predicho_entrenamiento = table((predict(modelo_multiple, muestra_entrenamiento) >= 0.5) == muestra_entrenamiento$EN)
+predicho_prueba = table((predict(modelo_multiple, muestra_prueba) >= 0.5) == muestra_prueba$EN)
+
+# Cálculo de relación aciertos / total predicciones
+precision_entrenamiento = predicho_entrenamiento[[2]]/(predicho_entrenamiento[[2]] + predicho_entrenamiento[[1]])
+precision_prueba = predicho_prueba[[2]]/(predicho_prueba[[2]] + predicho_prueba[[1]])
+
+# Muestra de precisión del entrenamiento y la prueba
+precision_entrenamiento
+precision_prueba
+```
+
+Basándose en los resultados obtenidos se puede observar que tienen una precisión similar, por ende el modelo es generalizable, aunque
+al ser tan parecidos los valores se recomienda hacer pruebas con otras muestras más. 
+Como se aprecia un buen nivel de ajuste, no hace falta arreglar el modelo (~86%).
+
+
+
+8. Usando código estándar, evaluar el poder predictivo de los modelos con los datos de las 30 personas que no se incluyeron en su construcción en términos de sensibilidad y especificidad.
+
+*Modelo simple*
+ 
+```{r}
+predicho_prueba = predict(modelo_simple, muestra_prueba) >= 0.5
+
+#Verdadero positivo
+vp_prueba = nrow(muestra_prueba[(predicho_prueba == muestra_prueba$EN) & muestra_prueba$EN,])
+
+#Verdadero negativo
+vn_prueba = nrow(muestra_prueba[(predicho_prueba == muestra_prueba$EN) & !muestra_prueba$EN,])
+
+#Falso positivo
+fp_prueba = nrow(muestra_prueba[(predicho_prueba != muestra_prueba$EN) & muestra_prueba$EN,])
+
+#Falso negativo
+fn_prueba = nrow(muestra_prueba[(predicho_prueba != muestra_prueba$EN) & !muestra_prueba$EN,])
+
+sensibilidad = vp_prueba/(vp_prueba+fn_prueba)
+
+especificidad = vn_prueba/(fp_prueba+vn_prueba)
+
+sensibilidad
+especificidad
+```
+
+Al ser los valores de la sensibilidad y la especificidad similares, se puede decir que no
+se aprecia un sesgo claro a categorizar con sobrepeso o sin sobrepeso a las personas en 
+base a las variables predictoras.
+
+
+*Modelo múltiple*
+
+```{r}
+predicho_prueba = predict(modelo_multiple, muestra_prueba) >= 0.5
+
+#Verdadero positivo
+vp_prueba = nrow(muestra_prueba[(predicho_prueba == muestra_prueba$EN) & muestra_prueba$EN,])
+
+#Verdadero negativo
+vn_prueba = nrow(muestra_prueba[(predicho_prueba == muestra_prueba$EN) & !muestra_prueba$EN,])
+
+#Falso positivo
+fp_prueba = nrow(muestra_prueba[(predicho_prueba != muestra_prueba$EN) & muestra_prueba$EN,])
+
+#Falso negativo
+fn_prueba = nrow(muestra_prueba[(predicho_prueba != muestra_prueba$EN) & !muestra_prueba$EN,])
+
+sensibilidad = vp_prueba/(vp_prueba+fn_prueba)
+
+especificidad = vn_prueba/(fp_prueba+vn_prueba)
+
+sensibilidad
+especificidad
+```
+
+Por lo que se puede observar el modelo tiene una tendencia a clasificar con sobrepeso a las personas,
+porque la sensibilidad es mayor a la especificidad, esto dice que hay tendencia a falsos positivos,
+y que no se ha encontrado evidencia suficiente de falsos negativos en las muestras de prueba.
+
+
+
+9. Conclusión respecto al modelo de regresión logística múltiple
+
+El modelo regresión logística múltiple tiene la variable de respuesta EN y las variables predictoras Chest.Girth, Thigh.Girth y Elbows.diameter. Se puede
+decir que el modelo es generalizable y con un buen nivel de ajuste (~86%), puesto que la precisión para el conjunto de prueba es similar al de 
+entrenamiento. 
+
+El modelo parece tener un sesgo al clasificar a las personas con sobrepeso por la diferencia entre la sensibilidad y la especificidad
+que se observan en las pruebas realizadas.
+
