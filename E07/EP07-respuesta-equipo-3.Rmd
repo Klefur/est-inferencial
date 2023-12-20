@@ -1,0 +1,199 @@
+---
+title: "EP07-respuesta-equipo-3"
+output: html_document
+date: "2023-10-17"
+---
+
+``` {r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggpubr)
+```
+
+### **Pregunta 1**
+
+**Observando los datos, la memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones A y C del algoritmo cuando las instancias tienen 60 o más nodos. ¿Los datos respaldan la intuición de la memorista? Para responder, filtren los datos para tener las instancias con 60 o más nodos y seleccionen las columnas de los tiempos de ejecución de las versiones A y C en formato ancho. Usando como semilla el valor 73, obtenga muestras aleatorias independientes de 24 tiempos registrados por la versión A y 20 tiempos registrados por la versión C del algoritmo. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.**
+
+Hipotesis:
+
+- H0: No hay diferenencias significativas en el tiempo de ejecución entre las versiones A y C del algoritmo cuando las instancias tienen 60 o más nodos.
+
+- HA: Hay diferenencias significativas en el tiempo de ejecución entre las versiones A y C del algoritmo cuando las instancias tienen 60 o más nodos.
+```{r}
+
+set.seed(73)
+
+datos <- read.csv2("EP07 Datos.csv", sep = ",")
+
+instancia <- 1:150
+algA <- datos$tiempo.A[datos$n.nodos >= 60]
+algC <- datos$tiempo.C[datos$n.nodos >= 60]
+
+tiempos <- data.frame(instancia, algA, algC)
+
+indicesA <- sample(instancia, 24)
+indicesC <- sample(as.integer(setdiff(instancia, indicesA)), 20)
+
+muestraA <- tiempos$algA[indicesA]
+muestraC <- tiempos$algC[indicesC]
+
+
+g <- ggqqplot(muestraA)
+print(g)
+g1 <- ggqqplot(muestraC)
+print(g1)
+
+```
+
+Como se puede apreciar, el gráfico de la muestraA, posee valores atípicos, por lo que no se cumple del todo la condición de la distribución normal de la prueba t. En consecuencia, se hará uso de una prueba no paramétrica con variables numéricas. Como se está trabajando con muestras independientes, se utilizará la prueba de suma de rangos de Wilcoxon.
+
+Para trabajar con la prueba de suma de rangos de Wilcoxon, se deben verificar las siguientes condiciones:
+
+1- Las observaciones de ambas muestras son independientes.
+
+2- La escala de medición empleada debe ser a lo menos ordinal, de modo que tenga sentido hablar de
+relaciones de orden (“igual que”, “menor que”, “mayor o igual que”).
+
+La primera condición se cumple, puesto que ambas muestras son independientes entre sí.
+
+Trabajando con mediciones de tiempo en milisegundos, podemos afirmar que la escala de medición es al menos ordinal, ya que los valores se pueden ordenar y es lógico establecer relaciones de orden. Esto se debe a que podemos comparar los valores de tiempo y determinar que, por ejemplo, 1 milisegundo es menor que 100 milisegundos.
+
+Ahora, se procede a trabajar con la prueba de suma de rangos de Wilcoxon.
+
+```{r}
+alfa <- 0.05
+
+# Hacer la prueba de Mann - Whitney .
+prueba <- wilcox.test(muestraA,muestraC,alternative = "two.sided" , conf.level = 1 - alfa)
+print(prueba)
+```
+
+Como el p-value es mayor al nivel de significancia establecido, se falla al rechazar la hipótesis nula. Por lo tanto, no hay prueba suficiente para respaldar la intuición de la memorista.
+
+### **Pregunta 2**
+
+**La memorista también sospecha que, al comparar las mismas instancias de iguales características, las mejores soluciones encontradas por las versiones A y B tienen rendimientos distintos. ¿Estará en lo cierto? Para responder, filtren los datos para tener las instancias con 60 o más nodos y seleccionen las columnas con el mejor rendimiento de las versiones A y B en formato ancho. Usando como semilla el valor 13, obtengan una muestra aleatoria de 22 instancias. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.**
+
+Hipótesis:
+
+- H0: Para las mismas instancias no existe diferencia significativa en el rendimiento de la mejores soluciones encontradas para las versiones A y B del algoritmo.
+
+- HA: Para las mismas instancias existe diferencia significativa en el rendimiento de la mejores soluciones encontradas para las versiones A y B del algoritmo.
+
+```{r}
+
+set.seed(13)
+
+algAmejor <- datos$mejor.A[datos$n.nodos >= 60]
+algBmejor <- datos$mejor.B[datos$n.nodos >= 60]
+
+mejor_rendimiento <- data.frame(instancia, algAmejor, algBmejor)  
+
+indiceMejor <- sample(instancia, 22)
+
+muestraAmejor <- as.integer(mejor_rendimiento$algAmejor[indiceMejor])
+muestraBmejor <- as.integer(mejor_rendimiento$algBmejor[indiceMejor])
+
+ggqqplot(muestraAmejor)
+ggqqplot(muestraBmejor)
+
+alfa <- 0.05
+# Hacer la prueba de rangos con signo de Wilcoxon .
+prueba <- wilcox.test(muestraAmejor,muestraBmejor,alternative = "greater",paired = TRUE,conf.level = 1 - alfa )
+print(prueba)
+```
+
+Puesto que el p-value es inferior al nivel de significancia establecido, se rechaza la hipótesis nula a faor de la hipótesis alternativa. 
+
+### **Pregunta 3**
+**La memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones del algoritmo cuando las instancias de prueba tienen 50 o más nodos. ¿Los datos respaldan la intuición de la memorista?**
+**Para responder, filtren los datos para tener las instancias con 50 o más nodos y seleccionen las columnas con los tiempos de ejecución registrados (en formato ancho). Usando como semilla el valor 43, obtengan muestras aleatorias independientes de 15, 15 y 13 tiempos registrados por las versiones A, B y C, respectivamente. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.**
+
+
+```{r}
+instancia <- 1:170
+algA <- datos$tiempo.A[datos$n.nodos >= 50]
+algB <- datos$tiempo.B[datos$n.nodos >= 50]
+algC <- datos$tiempo.C[datos$n.nodos >= 50]
+
+tiempos <- data.frame(instancia, algA, algB, algC)
+
+set.seed(43)
+
+indicesA <- sample(instancia, 15)
+indicesB <- sample(as.integer(setdiff(instancia, indicesA)), 15)
+indicesC <- sample(as.integer(setdiff(instancia, indicesA + indicesB)), 13)
+
+muestraA <- tiempos$algA[indicesA]
+muestraB <- tiempos$algC[indicesB]
+muestraC <- tiempos$algC[indicesC]
+
+ggqqplot(muestraA)
+ggqqplot(muestraB)
+ggqqplot(muestraC)
+
+# No se cumple normalidad en las 3
+# Hay independencia de datos
+
+# Los largos de las muestras no son todos iguales
+
+alfa <- 0.05
+
+# Para efectos de la prueba, se transforma a formato largo
+Algoritmo <- factor(c(rep("muestraA", length(muestraA)),
+               rep("muestraB", length(muestraB)),
+               rep("muestraC", length(muestraC))))
+Tiempo <- c(muestraA, muestraB, muestraC)
+
+info <- data.frame(Tiempo, Algoritmo)
+
+
+# Hacer la prueba de Kruskal - Wallis .
+prueba <- kruskal.test( Tiempo ~ Algoritmo , data = tiempos )
+print(prueba)
+# Tras realizada la prueba, con una significancia del 5% no hay suficiente evidencia estadistica para rechazar la hipotesis nula
+```
+
+### **Pregunta 4**
+**La memorista también sospecha que, al comparar las mismas instancias con iguales características, las mejores soluciones encontradas por las diferentes versiones del algoritmo tienen rendimientos distintos. ¿Estará en lo cierto?**
+**Para responder, filtren los datos para tener las instancias con 50 o más nodos y seleccionen las columnas con los mejores rendimientos registrados. Usando como semilla el valor 71, obtengan una muestra aleatoria de 22 instancias. Lleven los datos a formato largo y utilicen una prueba no paramétrica apropiada para analizar los datos obtenidos. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar prueba) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.**
+
+```{r}
+instancia <- 1:170
+algA <- datos$mejor.A[datos$n.nodos >= 50]
+algB <- datos$mejor.B[datos$n.nodos >= 50]
+algC <- datos$mejor.C[datos$n.nodos >= 50]
+
+tiempos <- data.frame(instancia, algA, algB, algC)
+
+set.seed(71)
+
+
+indices <- sample(instancia, 22)
+
+muestraMejorA <- as.double(tiempos$algA[indices])
+muestraMejorB <- as.double(tiempos$algC[indices])
+muestraMejorC <- as.double(tiempos$algC[indices])
+
+ggqqplot(muestraMejorA)
+ggqqplot(muestraMejorB)
+ggqqplot(muestraMejorC)
+
+# No se cumple normalidad en ninguno de los grupos
+
+Algoritmo <- factor(c(rep("muestraMejorA", length(muestraMejorA)),
+               rep("muestraMejorB", length(muestraMejorB)),
+               rep("muestraMejorC", length(muestraMejorC))))
+Tiempo <- c(muestraMejorA, muestraMejorB, muestraMejorC)
+
+info <- data.frame(Tiempo, Algoritmo)
+
+
+# Establecer nivel de significaci ó n
+alfa <- 0.05
+
+Sujeto <- rep(1:22, 3)
+# Hacer la prueba de Friedman .
+prueba <- friedman.test( Tiempo ~ Algoritmo | Sujeto , data = info )
+print(prueba)
+```

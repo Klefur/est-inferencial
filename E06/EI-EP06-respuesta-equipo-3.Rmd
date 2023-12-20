@@ -1,0 +1,128 @@
+---
+title: "EP06-respuesta-equipo-3"
+author:
+date: "2023-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggpubr)
+library(ez)
+library (nlme)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+```
+
+Equipo 3:
+
+Un equipo de investigadores del área de interacción humano-información está estudiando si el área temática y el nivel de dificultad del problema de información influyen en el tiempo (en segundos) que toma un usuario en formular una consulta de búsqueda para resolver dicho problema. Para ello, han reclutado a un grupo de participantes voluntarios, asignados aleatoriamente a distintos grupos. Cada participante debe resolver tres problemas de información con diferentes niveles de dificultad: baja, media y alta. A su vez, cada grupo debe resolver problemas relacionados a una temática diferente. Los datos recolectados contemplan las siguientes variables:
+
+
+- id: identificador único de cada participante.
+- area: Área temática de los problemas que el participante debe responder. Variable categórica con los niveles Arquitectura, Biología, Computación, Economía, Física, Leyes, Literatura, Matemáticas, Música, Pedagogía, Psicología, Química.
+- dificultad: Nivel de dificultad del problema resuelto. Variable categórica con los niveles Baja, Media y Alta.
+- tiempo: Tiempo, en segundos, que toma al participante formular la consulta.
+
+
+En el contexto de este estudio, realizaremos las siguientes actividades:
+
+1. Copiar el enunciado del problema asignado como comentario de un script R.
+
+2. Obtener los datos, disponibles en el archivo "EP05 Datos.csv", desde el directorio compartido correspondiente.
+
+3. Familiarizarse con los datos entregados, y enunciar las hipótesis nula y alternativa para el procedimiento ANOVA.
+
+4. Analizar si se cumplen las condiciones para usar un procedimiento ANOVA y agregar código al script R para verificarlo.
+
+5. Independiente del resultado anterior, aplicar una prueba ANOVA ómnibus a los datos y entregar una conclusión usando un nivel de significación adecuado.
+
+6. Determinar si corresponde o no aplicar un análisis post-hoc, justificando adecuadamente la opción escogida. Independiente del resultado anterior, aplicar un análisis post-hoc pertinente y comentar los resultados obtenidos.
+
+7. Redactar la respuesta a la pregunta planteada (comentario) en base a los resultados del análisis realizado.
+
+
+Pregunta:
+
+En este momento, los investigadores buscan determinar si existen diferencias en el tiempo que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad en el área de química.
+
+
+Definición Hipotesis:
+
+- Ho:La media de las diferencias en el tiempo que tardan los usuarios en formular una consulta para un problema de dificultades baja, media o alta en el area química es igual.
+
+  
+- Ha:  La media de las diferencias en el tiempo que tardan los usuarios en formular una consulta para un problema de dificultades baja, media o alta en el area química es distinta para al menos un grupo de dificultad.
+
+
+A continuación se trabaja con los datos, se realiza un filtrado segun el área temática "Química" y cada grupo de dificultad.
+
+
+```{r}
+datos <- read.csv2("EP05 Datos.csv", sep = ",")
+quimica <- datos %>% filter((area == "Química"))
+
+instancia <- factor(1:200)
+Baja <- quimica[quimica$dificultad %in% c("Baja"), ]$tiempo
+Media <- quimica[quimica$dificultad %in% c("Media"), ]$tiempo
+Alta <- quimica[quimica$dificultad %in% c("Alta"), ]$tiempo
+
+quimica <- data.frame(instancia, Baja, Media, Alta)
+
+quimica <- quimica %>% pivot_longer(c("Baja", "Media", "Alta"),
+                                names_to = "Dificultad" , values_to = "tiempo" )
+
+quimica[["Dificultad"]] <- factor(quimica[["Dificultad"]])
+
+```
+
+- Condiciones de uso para ANOVA:
+  
+  1. La escala con que se mide la variable dependiente tiene las propiedades de una escala de intervalosiguales. Esta condicion se cumple ya que la variable dependiente, es decir, el tiempo en segundos que demora un participante en formular una consulta (segundos) es una escala de intervalos iguales y de razón.
+  
+  2. Las mediciones son independientes al interior de cada grupo. Se puede asumir como verdadera esta condición ya que se indica: "se han reclutado a un grupo de participantes voluntarios, asignados aleatoriamente a distintos grupos" 
+  
+  3. Se puede suponer razonablemente que la(s) población(es) de origen sigue(n) una distribución normal. Esto se comprueba en base al gráfico QQ plot en el cual no se observan valores atípicos.
+  
+```{r}
+g <- ggqqplot(quimica, x = "tiempo", 
+              y = "Dificultad",
+              color = "Dificultad")
+g <- g + facet_wrap(~ Dificultad)
+print(g)
+```
+  
+  4. La matriz de varianzas-covarianzas es esférica. Como explica Horn (2008, p. 1), esta condición establece que las varianzas entre los diferentes niveles de las medidas repetidas deben ser iguales. Para verificar esta condición se realiza la prueba de esfericidad de Mauchly la cual es entregada por la prueba ezANOVA, obteniendose un p-value alto (0.36), por lo tanto se desprende que los datos cumplen con la condicion de esfericidad (hipótesis nula de la prueba de Mauchly).
+  
+```{r}
+prueba <- ezANOVA(data = quimica, dv = tiempo, within = Dificultad, 
+        wid = instancia, return_aov = TRUE)
+print(prueba[["Mauchly's Test for Sphericity"]])
+```
+Luego de verificadas las condiciones, se puede proceder con la prueba ANOVA omnibus para los datos:
+
+```{r}
+print(summary(prueba$aov))
+```
+La prueba ezANOVA con una significancia del 5% permite rechazar la hipótesis nula (Ho) en favor de la hipótesis alternativa (Ha), es decir, que la media de las diferencias en el tiempo que tardan los usuarios en formular una consulta para un problema de dificultades baja, media o alta en el area de química es distinta para al menos un grupo de dificultad, como se rechazó la hipótesis nula, se puede realizar un procedimiento post-hoc para determinar si la media de las diferencias de los tiempos en generar una consulta difieren entre la dificultad alta-baja, alta-media o media-baja. A continuación se realiza la corrección de Holm: 
+
+```{r}
+holm <- pairwise.t.test(quimica[["tiempo"]], quimica[["Dificultad"]], p.adj = "holm"
+                        , paired = TRUE)
+print(holm)
+```
+
+Además, como se cumplen las condiciones para aplicar la prueba omnibus ANOVA, también se cumplen las condiciones para aplicar la prueba HSD de Tukey, la cual es más poderosa que la prueba de Holm realizada:
+
+```{r}
+library ( emmeans )
+# Procedimiento post - hoc HSD de Tukey .
+mixto <- lme(tiempo ~ Dificultad , data = quimica , random = ~1| instancia ) 
+medias <- emmeans( mixto , "Dificultad" )
+tukey <- pairs( medias , adjust = "tukey" )
+cat ( "\n\nPrueba HSD de Tukey\n\n" )
+print(tukey)
+```
+
+Luego de realizar ambos procedimientos post-hoc se obtuvieron p-values que permiten determinar que existe una diferencia significativa en las medias de las diferencias de los tiempos en generar una consulta entre los grupos de dificultad Media-Baja y Alta-Baja.

@@ -1,0 +1,251 @@
+---
+title: "EP-08-respuesta-equipo3"
+output: html_document
+date: "2023-11-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ez)
+library(boot)
+###############DEFINICION DE FUNCIONES###############
+
+obtiene_permutacion <- function(i , muestra_1 , muestra_2) {
+  n_1 <- length( muestra_1)
+  combinada <- c( muestra_1 , muestra_2)
+  n <- length( combinada )
+  permutacion <- sample( combinada , n , replace = FALSE )
+  nueva_1 <- permutacion[1: n_1]
+  nueva_2 <- permutacion[( n_1+1) : n ]
+  return ( list( nueva_1 , nueva_2) )
+}
+
+
+calcular_diferencia <- function( muestras , FUN ) {
+  muestra_1 <- muestras[[1]]
+  muestra_2 <- muestras[[2]]
+  diferencia <- FUN( muestra_1) - FUN(muestra_2)
+  return ( diferencia )
+}
+
+calcular_valor_p <- function( distribucion , valor_observado ,
+                               repeticiones , alternative ) {
+  if ( alternative == "two.sided" ) {
+    numerador <- sum( abs( distribucion ) > abs( valor_observado ) ) + 1
+    denominador <- repeticiones + 1
+    valor_p <- numerador / denominador
+  }
+  else if ( alternative == "greater" ) {
+    numerador <- sum( distribucion > valor_observado ) + 1
+    denominador <- repeticiones + 1
+    valor_p <- numerador / denominador
+  }
+  else {
+    numerador <- sum( distribucion < valor_observado ) + 1
+    denominador <- repeticiones + 1
+    valor_p <- numerador / denominador
+  }
+  
+  return ( valor_p )
+}
+
+# Función para graficar una distribución .
+# Argumentos:
+# - distribucion: distribución nula del estadístico de interés .
+# - ...: otros argumentos a ser entregados a gghistogram y ggqqplot .
+graficar_distribucion <- function( distribucion , ...) {
+  observaciones <- data.frame( distribucion )
+  
+  histograma <- gghistogram( observaciones , x = "distribucion" ,
+                             xlab = "Estadístico de interés" ,
+                             ylab = "Frecuencia" , bins = 30 , ...)
+  
+  qq <- ggqqplot( observaciones , x = "distribucion" , ...)
+  
+  # Crear una única figura con todos los gráficos de dispersión .
+  figura <- ggarrange( histograma , qq , ncol = 2 , nrow = 1)
+  print ( figura )
+}
+
+# Función para hacer la prueba de permutaciones.
+# Argumentos :
+# - muestra_1 , muestra_2: vectores numéricos con las muestras a comparar .
+# - repeticiones : cantidad de permutaciones a realizar .
+# - FUN : función del estadístico E para el que se calcula la diferencia .
+# - alternative : tipo de hip ó tesis alternativa . " two . sided " para
+# hipótesis bilateral , " greater " o " less " para hipó tesis unilaterales .
+# - plot : si es TRUE , construye el gráfico de la distribución generada .
+# - ...: otros argumentos a ser entregados a graficar_distribucion .
+contrastar_hipotesis_permutaciones <- function( muestra_1 , muestra_2 ,
+                                                 repeticiones , FUN ,
+                                                 alternative , plot ) {
+  cat( "Prueba de permutaciones \n\n" )
+  cat( "Hipótesis alternativa :" , alternative , "\n" )
+  observado <- calcular_diferencia( list( muestra_1 , muestra_2) , FUN )
+  cat( "Valor observado : " , observado , "\n" )
+  n_1 <- length( muestra_1)
+  
+  # Generar permutaciones .
+  permutaciones <- lapply(1: repeticiones , obtiene_permutacion , muestra_1 ,
+                           muestra_2)
+  # Generar la distribuci ó n .
+  distribucion <- sapply( permutaciones , calcular_diferencia , FUN )
+  
+  # Graficar la distribuci ó n .
+  if ( plot ) {
+    graficar_distribucion( distribucion )
+  }
+  
+  # Calcular el valor p .
+  valor_p <- calcular_valor_p( distribucion , observado , repeticiones ,
+                                alternative )
+  
+  cat( "Valor p : " , valor_p, "\n" )
+}
+```
+
+## Pregunta 1
+
+¿Es similar la cantidad de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet (variable r16e) entre habitantes de la Región Metropolitana y la Región de Coquimbo (variable region), específicamente entre personas de 18 a 30 años de edad (variable edad)?
+
+
+H0: La cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet en la región metropolitana es igual a la cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet en la región de Coquimbo.
+
+Ha: La cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet en la región metropolitana
+es dintinta a la cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet en la región de Coquimbo.
+
+Denotando: 
+
+μ_mm: cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet en la región metropolitana.
+
+μ_mc: cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet en la región de Coquimbo.
+
+Se plantean las hipótesis en lenguaje matemático:
+
+H0: μ_mm - μ_mc = 0
+
+Ha: μ_mm - μ_mc != 0
+
+Se trabajará con un nivel de significancia de 0.05.
+
+```{r}
+archivo = read.csv2("EP08 Datos CASEN 2017.csv", fileEncoding = "latin1")
+
+#Trabajo con los datos
+datos1 <- archivo %>% filter(edad > 18 & edad < 30)
+datos1 <- datos1 %>% filter(r16e == "Sí" | r16e == "No")
+
+datos_metropolitana <-datos1 %>% filter(region == "Región Metropolitana de Santiago")
+datos_coquimbo <- datos1 %>% filter(region == "Región de Coquimbo")
+
+set.seed(123)
+indices1 <- sample(1:424, 140) 
+indices2 <- sample(1:189, 140) 
+muestra_metropolitana <- ifelse(datos1$r16e[indices1] == "Sí", 1, 0)
+muestra_coquimbo <- ifelse(datos1$r16e[indices2] == "Sí", 1, 0)
+R = 5000
+
+# Hacer pruebas de permutaciones para la media y la varianza. contrastar_hipotesis_permutaciones(a, b, repeticiones = R, FUN = mean, alternative = "two.sided", plot = TRUE, color = "blue", fill = "blue") 
+contrastar_hipotesis_permutaciones(muestra_metropolitana ,muestra_coquimbo , repeticiones = R, FUN = mean,
+                                    alternative = "two.sided", plot = FALSE)
+```
+
+
+Al realizar el contraste de hipótesis se obtuvo como p valor 0.6214757 lo cual es mayor que el nivel de significancia elegido, por lo tanto se falla en rechazar la hipótesis nula. En consecuencia, se puede determinar con un 95% de confianza que la cantidad promedio de hogares en los que se tiene en uso y funcionamiento Smart TV o TV con internet entre habitantes de la Región Metropolitana y la Región de Coquimbo, específicamente entre personas de 18 a 30 años de edad es igual.
+
+## Pregunta 2
+
+La cantidad de hijos nacidos vivos (s4) promedio por persona es similar entre mujeres de 20 a 25, de 26 a 30, 40 a 45 y 46 a 50 años(edad)?
+
+Formulamos las hipótesis:
+
+ H0: La cantidad promedio de hijos nacidos vivos es similar entre mujeres de 20 a 25, de 26 a 30, 40 a 45 y 46 a 50 años.
+ 
+ HA: La cantidad promedio de hijos nacidos vivos es distinta entre mujeres de 20 a 25, de 26 a 30, 40 a 45 y 46 a 50 años.
+
+Denotando: 
+
+μ_1: La cantidad promedio de hijos nacidos vivos es similar entre mujeres de 20 a 25.
+
+μ_2: La cantidad promedio de hijos nacidos vivos es similar entre mujeres de 26 a 30.
+
+μ_3: La cantidad promedio de hijos nacidos vivos es similar entre mujeres de 40 a 45.
+
+μ_4: La cantidad promedio de hijos nacidos vivos es similar entre mujeres de 46 a 50.
+
+Se plantean las hipótesis en lenguaje matemático:
+
+H0: μ_1 = μ_2 = μ_3 = μ_4
+
+Ha: Al menos una de las medias μ_i es diferente de las demás, donde i=1,2,3,4.
+
+
+```{r}
+datos2_20_25 <- archivo %>% filter(edad > 20 & edad < 25 & sexo == "Mujer")
+datos2_26_30 <- archivo %>% filter(edad > 26 & edad < 30 & sexo == "Mujer")
+datos2_40_45 <- archivo %>% filter(edad > 40 & edad < 45 & sexo == "Mujer")
+datos2_46_50 <- archivo %>% filter(edad > 46 & edad < 50 & sexo == "Mujer")
+
+set.seed(321)
+
+indices1 <- sample(1:1551, 250)
+indices2 <- sample(1:1476, 250) 
+indices3 <- sample(1:2084, 250)
+indices4 <- sample(1:1597, 250)
+
+muestra1 <- datos2_20_25$s4[indices1]
+muestra2 <- datos2_26_30$s4[indices2]
+muestra3 <- datos2_40_45$s4[indices2]
+muestra4 <- datos2_46_50$s4[indices2]
+
+datos_combinados <- data.frame(
+  Edad = rep(c("20-25", "26-30", "40-45", "46-50"), each = 250),
+  Hijos = c(muestra1, muestra2, muestra3, muestra4)
+)
+
+datos_combinados$Edad <- factor(datos_combinados$Edad) 
+datos_combinados$instancia <- factor(1:nrow(datos_combinados))
+
+media_hijos <- mean(datos_combinados$Hijos)
+
+valor_obs <- ezANOVA(data = datos_combinados,dv= Hijos, between = Edad,wid= instancia, return_aov = TRUE)
+
+B <- 3999
+
+media <- function(valores, i){
+  mean(valores[i])
+}
+
+distribucion_20_25 <- boot(muestra1, statistic = media, R=B )
+distribucion_26_30 <- boot(muestra2, statistic = media, R=B )
+distribucion_40_45 <- boot(muestra3, statistic = media, R=B )
+distribucion_46_50 <- boot(muestra4, statistic = media, R=B )
+
+muestra1Boot <- c(distribucion_20_25$data)
+muestra2Boot <- c(distribucion_26_30$data)
+muestra3Boot <- c(distribucion_40_45$data)
+muestra4Boot <- c(distribucion_46_50$data)
+
+datos_combinadosBoot <- data.frame(
+  Edad = rep(c("20-25", "26-30", "40-45", "46-50"), each = 250),
+  Hijos = c(muestra1Boot, muestra2Boot, muestra3Boot, muestra4Boot)
+)
+datos_combinados$Edad <- factor(datos_combinados$Edad)
+datos_combinadosBoot$instancia = factor(1:nrow(datos_combinadosBoot))
+
+valor_observadoBoot <- ezANOVA(data = datos_combinadosBoot,dv= Hijos, between = Edad,wid= instancia, return_aov = TRUE)
+print(summary(valor_observadoBoot$aov))
+sprintf("Estadístico F con Bootstrap y sin BootStrap")
+print(valor_observadoBoot$ANOVA$F)
+print(valor_obs$ANOVA$F)
+```
+
+Como se obtiene un p value menor que 0.05 (se rechaza la hipótesis nula en favor de la alternativa) se hace el procedimiento posthoc:
+
+```{r}
+post_hoc = pairwise.t.test(datos_combinadosBoot$Hijos, datos_combinadosBoot$Edad, p.adj = "holm", paired = FALSE, conf.level= .95)
+print(post_hoc)
+```
+
+Al realizar el procedimiento post-hoc de Holm, se puede observar que existe un pvalor mayor al nivel de significancia considerado, entre los grupos de 20-25 años y 26-30 años, lo cual permite concluir que no hubo evidencia estadística suficiente para rechazar la hipótesis nula, es decir, que la cantidad promedio de hijos nacidos vivos es similar entre mujeres de estos dos grupos etarios. Mientras que entre el resto de grupos se rechazó la hipótesis nula en favor de la alternativa, es decir, que existen diferencias significativas en la cantidad  promedio de hijos nacidos vivos entre mujeres de dichos grupos.
